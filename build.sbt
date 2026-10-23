@@ -8,7 +8,7 @@ val scala3Next = "3.9.0"
 
 ThisBuild / organization := "io.github.okay-effects"
 ThisBuild / organizationName := "okay-effects"
-ThisBuild / version := "0.1.1-SNAPSHOT"
+ThisBuild / version := "0.1.0"
 ThisBuild / scmInfo := Some(ScmInfo(url("https://github.com/okay-effects/okay-scala"),
   "scm:git:https://github.com/okay-effects/okay-scala.git"))
 ThisBuild / startYear := Some(2026)
