@@ -10,7 +10,7 @@ it: what Scala 2 made okay-simple give up is taken back, and nothing is kept tha
 | `Rows.scala` | the rows (`+`, `%`, `Void`), places (`Place`, `At`, `Taken`, `Escape`), `In`, `Split`, `Sub` |
 | `Prog.scala` | the language: `!`, `Prog` (the machine's C), its words, from `pure` to `run` |
 | `Handler.scala` | `Handler`, its four shapes and their makers, `Cell`; `fresh` and `ret` |
-| `Continuation.scala` | K in its parts — `Frames` (σ), `Levels` (κ), `Crossed` — with `released` and `put` |
+| `Frames.scala` | K in its parts — `Frames` (σ), `Levels` (κ), `Crossed` — with `released` and `put` |
 | `Cek.scala` | the machine's steps alone: `steps`, `enter`, `leave`, `out`, `here`, `inPlace`, `run` |
 | `Messages.scala` | the macro that says what effect a program lacks |
 | `Std`, `Choose`, `Services`, `Control`, `Lift` | the standard effects, each with its words and handlers |
