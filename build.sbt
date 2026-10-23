@@ -7,7 +7,22 @@ val scala3 = "3.3.8"
 val scala3Next = "3.9.0"
 
 ThisBuild / organization := "io.github.okay-effects"
-ThisBuild / version := "0.1.0-SNAPSHOT"
+ThisBuild / organizationName := "okay-effects"
+ThisBuild / version := "0.1.0"
+ThisBuild / scmInfo := Some(ScmInfo(url("https://github.com/okay-effects/okay-scala"),
+  "scm:git:https://github.com/okay-effects/okay-scala.git"))
+ThisBuild / startYear := Some(2026)
+ThisBuild / versionScheme := Some("early-semver")
+ThisBuild / description := "Algebraic effects for Scala 3 alone: rows A ! R, R + E, F % S; one CEK machine, enums and GADTs, no cast"
+
+/** RELEASES, ON GITHUB PAGES: `sbt -Dplatforms=jvm,js,native publish` writes the library for all three platforms, as a
+ * Maven repository, into `target/pages-maven/`; that goes to the `gh-pages` branch under `maven/`, served at
+ * https://okay-effects.github.io/okay-scala/maven (RELEASING.md). Without `+`: the `_3` artifacts are Scala 3.3's */
+val pagesRepository = settingKey[File]("the Maven repository a release is written to, for GitHub Pages")
+ThisBuild / pagesRepository := (ThisBuild / baseDirectory).value / "target" / "pages-maven"
+ThisBuild / publishTo := Some(MavenCache("pages", (ThisBuild / pagesRepository).value))
+/** no API documentation jars, as okay-simple: the sources jars are published, which IDEs read */
+ThisBuild / Compile / packageDoc / publishArtifact := false
 ThisBuild / scalaVersion := scala3
 ThisBuild / crossScalaVersions := Seq(scala3, scala3Next)
 ThisBuild / scalacOptions ++= Seq("-deprecation", "-feature", "-unchecked", "-Werror",

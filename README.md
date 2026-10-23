@@ -128,5 +128,13 @@ with other work on it: read differences under 10% as noise.
 
 sbt. The library is built by Scala 3.3 LTS, so any Scala 3 from 3.3 on reads it, and published for the JVM, Scala.js and
 Scala Native: `sbt +coreJVM/test` runs its suite on Scala 3.3 and 3.9, `sbt -Dplatforms=jvm,js,native coreJS/test
-coreNative/test` on the other platforms, `sbt "bench/Jmh/run"` the benchmark. Publish without `+`: the `_3` artifact is
-3.3's. Not yet released. Apache-2.0.
+coreNative/test` on the other platforms, `sbt "bench/Jmh/run"` the benchmark. Apache-2.0.
+
+## Using it
+
+```scala-sbt
+resolvers += "okay-scala" at "https://okay-effects.github.io/okay-scala/maven"
+libraryDependencies += "io.github.okay-effects" %% "okay-scala" % "0.1.0"     // %%% on Scala.js, Scala Native
+```
+
+Releases are a Maven repository on GitHub Pages ([RELEASING.md](RELEASING.md)).
