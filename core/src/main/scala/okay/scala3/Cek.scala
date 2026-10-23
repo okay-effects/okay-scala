@@ -85,6 +85,9 @@ object Cek:
     case v: Prog.Value[r, x] => σ match
         case b: Frames.Bind[r2, a, y, v2] => steps[R, y, V, Z](b.f(v.a), b.rest, κ)
         case m: Frames.Map[r2, a, y, v2] => steps[R, y, V, Z](Prog.Value(m.f(v.a)), m.rest, κ)
+        case f: Frames.Finally[r2, x2, v2] =>
+          f.release()
+          steps[R, X, V, Z](c, f.rest, κ)
         case _: Frames.End[r2, v2] => κ match
             case _: Levels.Top[p, z] => v.a
             case _ =>
@@ -130,6 +133,7 @@ object Cek:
         State[r, a, a, Z](h.p, Frames.End(), Levels.Handled[e, r, R, a, b, V, Z](h.at, fresh(h.h), σ, κ))
       case r: Prog.Remap[r1, r2, a] =>
         State[r1, a, a, Z](r.p, Frames.End(), Levels.Renamed[r1, R, a, V, Z](r.rename, σ, κ))
+      case e: Prog.Ensure[r, a] => State[R, a, V, Z](e.p, Frames.Finally[R, a, V](e.release, σ), κ)
 
   /** an operation going out to its handler: the levels it crosses taken into `crossed` */
   @tailrec private def out[E[_], R0[_], X, V0, R[_], V, Z](at: At[E, R, ?], op: E[X], inner: Frames[R0, X, V0],
@@ -168,10 +172,33 @@ object Cek:
     case g: Handler.General[e, t, a, b] =>
       val k = (x: X) => Prog.Resume[Rest, X, B, R0, V0, E, R, A](inner, crossed, l.at, g, x)
       State[Rest, B, W, Z](g.op[X](op, k), l.outside, l.up)
-    case a: Handler.Abort[e, t, a2, b] => State[Rest, B, W, Z](a.abort[X](op), l.outside, l.up)
+    case a: Handler.Abort[e, t, a2, b] =>
+      // the rest dropped: what it holds released, innermost first
+      released(inner)
+      released(crossed)
+      State[Rest, B, W, Z](a.abort[X](op), l.outside, l.up)
     case t: Handler.Tail[e, t2, a2, b] => State[R0, X, V0, Z](Prog.Value(t.answer[X](op)), inner, put(crossed, l))
     case s: Handler.Stateful[e, t, a2, b, st] =>
       State[R0, X, V0, Z](Prog.Value(s.answer[X](op, s.cell)), inner, put(crossed, l))
+
+  /** the frames' `release`s run, innermost first: they are dropped */
+  @tailrec private def released(σ: Frames[?, ?, ?]): Unit = σ match
+    case f: Frames.Finally[r, x, v] =>
+      f.release()
+      released(f.rest)
+    case b: Frames.Bind[r, x, y, v] => released(b.rest)
+    case m: Frames.Map[r, x, y, v] => released(m.rest)
+    case _: Frames.End[r, v] => ()
+
+  /** the levels crossed released, innermost first: each level's frames outside it */
+  private def released(crossed: Crossed[?, ?, ?, ?]): Unit = crossed match
+    case _: Crossed.Nothing[r, v] => ()
+    case h: Crossed.Handled[ri, vi, e, r, rest, a, b, w] =>
+      released(h.inner)
+      released(h.outside)
+    case r: Crossed.Renamed[ri, vi, r1, r2, a, w] =>
+      released(r.inner)
+      released(r.outside)
 
   def run[A](p: Prog[Pure, A]): A = steps[Pure, A, A, A](p, Frames.End(), Levels.Top(Escape.pure))
 

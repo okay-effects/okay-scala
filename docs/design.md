@@ -104,6 +104,17 @@ A clause is a polymorphic function, `[X] => (op: State[S, X]) => op match ...`, 
 The shape tells the machine what it may skip: a `Tail` or `Stateful` operation is answered where it is, no `k` made, the
 answer straight into the next frame; an `Abort` drops the rest with no `k`; only a `General` handler makes one.
 
+## Resources: released when the rest is dropped
+
+`ensuring(p)(release)` puts a frame on σ, `Finally`: a value passing it runs `release`. A handler that aborts — its
+shape says it, `Abort` (`Fail`, `Abort`) — drops the rest as data the machine holds: the frames inside, the levels
+crossed, each level's frames outside it. So the machine runs their `release`s, innermost first, before the clause.
+
+A general handler drops the rest by not calling `k`, and that the machine cannot see: `k` is a function, never
+called. So a `release` inside a way a `Choose` drops, or past what `Yield.take` took, does not run; and one inside a
+`k` resumed twice runs at each end. A resource held across a general handler's operations needs that handler's own
+care.
+
 ## Inline, and the one macro
 
 `inline` is where it cannot change what a program means: the machine's own helpers, and `perform`, whose `Performing`

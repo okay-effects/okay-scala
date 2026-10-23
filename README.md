@@ -90,10 +90,29 @@ def run[S, R[_], Rest[_], A](init: S)(p: A ! R)(using Split[State % S, R, Rest])
 | `defer(p)`, `loop(a)(f)` | a tail call; a loop — both in constant stack |
 | `handle(p, h)` | `E` handled from wherever it is in the row |
 | `intercept(p, h)` | each operation of `E` to `h` first, then on to `E`'s handler outside: control and audit |
+| `observe(p)(see)`, `around(p)(f)` | each operation of `E` seen, or wrapped, then passed on: an audit trail, a trace, a change |
+| `ensuring(p)(release)`, `bracket(acquire)(use)(release)` | released when the program ends, or when a failure drops it |
 | `p.into[S]`, `split(p)` | into a bigger row; an effect to the end of the row |
 | `run(p)` | a program of no effect, run |
 
-The standard effects: `State`, `Reader`, `Writer`, `Fail`, `Choose` (multi-shot), `Yield` (generators).
+The standard effects:
+
+| Effect | Words | Handlers |
+|---|---|---|
+| `State % S` | `get`, `put`, `modify`, `gets` | `State.run(init)` |
+| `Reader % E` | `ask` | `Reader.run(env)`, `Reader.local(f)` |
+| `Writer % W` | `tell` | `Writer.run`, `Writer.listen`, `Writer.censor(f)` |
+| `Fail % E` | `raise` | `Fail.run` (an `Either`), `Fail.recover(p)(h)` |
+| `Abort` | `exit` | `Abort.optional` (an `Option`) |
+| `Choose` (multi-shot) | `among`, `flip`, `none`, `guard`, `once`, `mark`, `cut` | `Choose.all`, `Choose.first` |
+| `Yield % O` (generators) | `emit` | `Yield.collect`, `Yield.foreach(f)`, `Yield.take(n)` |
+| `Control % (B ! R)` | `shift` | `Control.reset` |
+| `Lifted[G]` | `lift` | `Lift.lower`, by a `Lowering[G]`: `Option`, `Either`, `Try`, `Future` |
+| `Fresh` | `next` | `Fresh.from(n)` |
+| `Random` | `long`, `int(bound)`, `double` | `Random.seeded(seed)`: splitmix64, the same each run |
+| `Store.Of[K, V]` | `load`, `save`, `remove` | `Store.inMemory(map)` |
+| `Clock` | `now`, `sleep` | `Clock.virtual(start)`: time at once; `Clock.system` (JVM, Native) |
+| `Log` | `debug`, `info`, `warn`, `error` | `Log.collect(least)`, `Log.to(sink, least)` |
 
 ## The machine
 
@@ -115,16 +134,18 @@ okay-simple keeps this comparison, `benchCek`; this repository's `bench` measure
 |---|---|---|---|
 | binds | 7.7 | 7.9 | 7.6 |
 | `ask` under its handler | 17.0 | 17.2 | 15.8 |
-| `ask` across four handlers | 36.4 | 35.6 | 21.6 |
+| `ask` across four handlers | 36.4 | 35.6 | 36.7 |
 | a state's get and put | 19.0 | 17.9 | 18.0 |
 | the same, row-polymorphic: `ask` near | 17.4 | 20.0 | 16.9 |
-| `ask` across four | 30.2 | 29.2 | 15.7 |
+| `ask` across four | 30.2 | 29.2 | 30.2 |
 | state | 17.3 | 18.1 | 19.0 |
 
-The machine is as fast as okay-simple's tuned one, with no cast. The gap across four handlers is
-not the machine's: okay-simple's `Choose` handler is a general handler with a state of its own, which its interface
-makes of functions of the state; here `Choose` is a plain general handler. One run, 2 forks × 5 iterations, on a laptop
-with other work on it: read differences under 10% as noise.
+The "across four" runs had read 21.6 and 15.7 here: a program whose only bind was the benchmark's own, so the JIT
+inlined the machine's one call of a bind's function. `Choose.all`, made with a bind of its own (for `cut`), took that
+away — as does any second bind in any program, so every real one: the numbers above are those, the machine unchanged.
+
+The machine is as fast as okay-simple's tuned one, with no cast. One run, 2 forks × 5 iterations, on a laptop with
+other work on it: read differences under 10% as noise.
 
 ## Building
 

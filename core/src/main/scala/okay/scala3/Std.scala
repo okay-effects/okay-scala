@@ -15,6 +15,8 @@ object State:
   def get[S, R[_]](using In[State % S, R]): S ! R = perform[State % S](Get())
   def put[S, R[_]](s: S)(using In[State % S, R]): Unit ! R = perform[State % S](Put(s))
   def modify[S, R[_]](f: S => S)(using In[State % S, R]): Unit ! R = get[S, R].flatMap(s => put(f(s)))
+  /** the state through `f` */
+  def gets[S, A, R[_]](f: S => A)(using In[State % S, R]): A ! R = get[S, R].map(f)
 
   /** the program from `init`: the state it ends with, and its value */
   def run[S, R[_], Rest[_], A](init: S)(p: A ! R)(using Split[State % S, R, Rest]): (S, A) ! Rest =
@@ -34,6 +36,10 @@ object Reader:
     handle(p, Handler.tail[Reader % E, Rest, A, A](pure)([X] => (op: Reader[E, X]) => op match
       case Ask() => env))
 
+  /** `p` with the environment through `f`: its asks answered here, from the environment outside; the row stays */
+  def local[E, R[_], Rest[_], A](f: E => E)(p: A ! R)(using Split[Reader % E, R, Rest], Sub[Rest, R]): A ! R =
+    ask[E, R].flatMap(e => run(f(e))(p).into[R])
+
 /** an output of type `W`, written */
 enum Writer[W, X]:
   case Tell[W](w: W) extends Writer[W, Unit]
@@ -47,6 +53,19 @@ object Writer:
       [X] => (op: Writer[W, X], cell: Cell[List[W]]) => op match
         case Tell(w) => cell.set(w :: cell.get)))
 
+  /** what `p` wrote, with its value — written outside too, when `p` ends */
+  def listen[W, R[_], Rest[_], A](p: A ! R)(using Split[Writer % W, R, Rest], Sub[Rest, R], In[Writer % W, R])
+    : (List[W], A) ! R =
+    run[W, R, Rest, A](p).into[R].flatMap((ws, a) => tellAll[W, R](ws).as((ws, a)))
+
+  /** what `p` wrote, through `f`, written outside when `p` ends */
+  def censor[W, R[_], Rest[_], A](f: List[W] => List[W])(p: A ! R)(
+    using Split[Writer % W, R, Rest], Sub[Rest, R], In[Writer % W, R]): A ! R =
+    run[W, R, Rest, A](p).into[R].flatMap((ws, a) => tellAll[W, R](f(ws)).as(a))
+
+  private def tellAll[W, R[_]](ws: List[W])(using In[Writer % W, R]): Unit ! R =
+    ws.foldLeft(unit[R])((p, w) => p.andThen(tell[W, R](w)))
+
 /** failure with an error of type `E`: the rest of the program dropped */
 enum Fail[E, X]:
   case Raise[E](e: E) extends Fail[E, Nothing]
@@ -59,27 +78,24 @@ object Fail:
     handle(p, Handler.abort[Fail % E, Rest, A, Either[E, A]](a => pure(Right(a)))([X] => (op: Fail[E, X]) => op match
       case Raise(e) => pure(Left(e))))
 
-/** a choice among values: its handler resumes the rest once for each — MULTI-SHOT */
-enum Choose[X]:
-  case Among[X](xs: List[X]) extends Choose[X]
+  /** the value, or `h` of what was raised, in its place: the rest dropped, `h` in the row without this `Fail` — so
+   * one raised there goes to the next handler of it */
+  def recover[E, R[_], Rest[_], A](p: A ! R)(h: E => A ! Rest)(using Split[Fail % E, R, Rest]): A ! Rest =
+    run[E, R, Rest, A](p).flatMap:
+      case Right(a) => pure(a)
+      case Left(e) => h(e)
 
-object Choose:
-  def among[X, R[_]](xs: List[X])(using In[Choose, R]): X ! R = perform[Choose](Among(xs))
-  def flip[R[_]](using In[Choose, R]): Boolean ! R = among(List(true, false))
-  /** no value: this way gives nothing */
-  def none[X, R[_]](using In[Choose, R]): X ! R = among(Nil)
+/** an early end with no value: the rest dropped, `optional` giving `None` */
+enum Abort[X]:
+  case Exit[X]() extends Abort[X]
 
-  /** every value of every way the choices can go, in order */
-  def all[R[_], Rest[_], A](p: A ! R)(using Split[Choose, R, Rest]): List[A] ! Rest =
-    handle(p, Handler.general[Choose, Rest, A, List[A]](a => pure(List(a)))([X] => (op: Choose[X], k: X => List[A] ! Rest) =>
-      op match
-        case Among(xs) => collect(xs, k, Nil)))
+object Abort:
+  /** the program ended here, with no value */
+  def exit[X, R[_]](using In[Abort, R]): X ! R = perform[Abort](Exit[X]())
 
-  /** `k` resumed for each value in turn, the lists joined — kept reversed as they come, each value's once, so the
-   * joining is linear — a loop of the program, no stack */
-  private def collect[X, A, R[_]](xs: List[X], k: X => List[A] ! R, reversed: List[A]): List[A] ! R = xs match
-    case Nil => pure(reversed.reverse)
-    case x :: rest => k(x).flatMap(as => collect(rest, k, as reverse_::: reversed))
+  /** the value, or `None` if the program ended early */
+  def optional[R[_], Rest[_], A](p: A ! R)(using Split[Abort, R, Rest]): Option[A] ! Rest =
+    handle(p, Handler.abort[Abort, Rest, A, Option[A]](a => pure(Some(a)))([X] => (_: Abort[X]) => pure(None)))
 
 /** a generator's values, each given out: the program goes on when it is taken */
 enum Yield[O, X]:
@@ -98,3 +114,14 @@ object Yield:
   def foreach[O, R[_], Rest[_], A](p: A ! R)(using Split[Yield % O, R, Rest])(f: O => Unit ! Rest): A ! Rest =
     handle(p, Handler.general[Yield % O, Rest, A, A](pure)([X] => (op: Yield[O, X], k: X => A ! Rest) => op match
       case Emit(o) => f(o).flatMap(k)))
+
+  /** the first `n` values, and the program's value if it ended by then: stopped at the value after them */
+  def take[O, R[_], Rest[_], A](n: Int)(p: A ! R)(using Split[Yield % O, R, Rest]): (List[O], Option[A]) ! Rest =
+    // the handler's value: a program given how many are still to take, and those taken, reversed
+    type Go = (Int, List[O]) => (List[O], Option[A]) ! Rest
+    handle(p, Handler.general[Yield % O, Rest, A, Go](a => pure((_, taken) => pure((taken.reverse, Some(a)))))(
+      [X] => (op: Yield[O, X], k: X => Go ! Rest) => op match
+        case Emit(o) => pure[Go, Rest]((left, taken) =>
+          if left <= 0 then pure((taken.reverse, None))
+          else k(()).flatMap(go => go(left - 1, o :: taken)))))
+      .flatMap(go => go(n, Nil))
