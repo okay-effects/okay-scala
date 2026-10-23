@@ -20,15 +20,15 @@ enum Prog[R[_], +A]:
   /** the program made when the run gets to it: a tail call, a loop in constant stack */
   case Defer[R[_], A](p: () => Prog[R, A]) extends Prog[R, A]
   /** an operation of `E`, at its place in `R` */
-  case Perform[R[_], E[_], X](at: Place[E, R, ?], op: E[X]) extends Prog[R, X]
+  case Perform[R[_], E[_], X](at: At[E, R, ?], op: E[X]) extends Prog[R, X]
   /** `p` with its `E`, at `at`, handled by `h`: the program outside at `Rest` */
-  case Handle[E[_], R[_], Rest[_], A, B](p: Prog[R, A], at: Place[E, R, Rest], h: Handler[E, Rest, A, B])
+  case Handle[E[_], R[_], Rest[_], A, B](p: Prog[R, A], at: At[E, R, Rest], h: Handler[E, Rest, A, B])
     extends Prog[Rest, B]
   /** `p` in another row, its places renamed */
   case Remap[R1[_], R2[_], A](p: Prog[R1, A], rename: Sub[R1, R2]) extends Prog[R2, A]
   /** `k` resumed with `x`: the frames inside and the levels crossed put back, under the general handler `h` */
   case Resume[Rest[_], X, B, R0[_], V0, E[_], R[_], A](inner: Frames[R0, X, V0], crossed: Crossed[R0, V0, R, A],
-    at: Place[E, R, Rest], h: Handler[E, Rest, A, B], x: X) extends Prog[Rest, B]
+    at: At[E, R, Rest], h: Handler[E, Rest, A, B], x: X) extends Prog[Rest, B]
 
 /**
  * A HANDLER OF `E`, the row outside it `R`, the body's value `A`, its own `B`: of one of four shapes, which the

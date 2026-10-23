@@ -55,12 +55,34 @@ trait SplitMissing:
 type Has[E[_]] = [R[_]] =>> In[E, R]
 
 /**
+ * A PLACE OF `E` IN `R`, `R` without it `Rest`, of any representation: what the machine needs of one is `take` — an
+ * operation's place compared with a handler's, the answer `Taken`, whose `Mine` proves by its type that the operation
+ * is the handler's. This library's places are `Place`; another library's rows, of other classes, give the machine
+ * places of their own (okay-simple's adapter does), each proving `Mine` where its own types show it: no cast.
+ */
+trait At[E[_], R[_], Rest[_]]:
+  /** the operation's place `at`, in the same row, met by the handler of `E` here */
+  def take[E2[_]](at: At[E2, R, ?]): Taken[E, E2, Rest]
+
+/** AN OPERATION PAST EVERY HANDLER, at the top of a run of the row `P`: it cannot be — a run's row has no effect, and
+ * an operation of no effect has no value — and this says why, for the places of `P`'s representation */
+trait Escape[P[_]]:
+  def apply[E[_], X](at: At[E, P, ?], op: E[X]): Nothing
+
+object Escape:
+  /** this library's: past every handler, an operation is at `Pure`'s one place or the empty effect's — of `Void` */
+  val pure: Escape[Pure] = new Escape[Pure]:
+    def apply[E[_], X](at: At[E, Pure, ?], op: E[X]): Nothing = (at: @unchecked) match
+      case _: Place.Only[e] => op.absurd
+      case _: Place.Absurd[r] => op.absurd
+
+/**
  * THE PLACE OF `E` IN `R`, `R` without it `Rest`: a path, typed by the row, found by given search — the evidence that
  * `E` is in `R`. The machine matches an operation's place against a handler's, and Scala's GADT inference learns from
  * the match that the operation is the handler's: no cast anywhere.
  */
 @implicitNotFound("the effect ${E} is not in the row ${R}")
-enum Place[E[_], R[_], Rest[_]]:
+enum Place[E[_], R[_], Rest[_]] extends At[E, R, Rest]:
   /** the one effect of a row of one */
   case Only[E[_]]() extends Place[E, E, Pure]
   /** the last effect of `R + E` */
@@ -70,6 +92,8 @@ enum Place[E[_], R[_], Rest[_]]:
   /** the empty effect, in every row: `Void`, of no operation. Where `Pure`'s places go when a program of no effect
    * is put into a row (`into`); an operation is never there */
   case Absurd[R[_]]() extends Place[Void, R, R]
+
+  def take[E2[_]](at: At[E2, R, ?]): Taken[E, E2, Rest] = Taken(this, at)
 
 /** the places found: a row of one, then the last effect, then one further in — in this order, so that an effect
  * twice in a row is found at its last place, nearest to the program */
@@ -88,23 +112,23 @@ trait InitPlace:
  */
 @implicitNotFound("the row ${R} is not in the row ${S}: an effect of it is missing there")
 trait Sub[R[_], S[_]]:
-  def apply[E[_]](at: Place[E, R, ?]): Place[E, S, ?]
+  def apply[E[_]](at: At[E, R, ?]): At[E, S, ?]
 
 object Sub extends SubMore:
   /** `Pure`'s one place — the empty effect's — to the empty effect's in `S` */
   given pure[S[_]]: Sub[Pure, S] = new Sub[Pure, S]:
-    def apply[E[_]](at: Place[E, Pure, ?]): Place[E, S, ?] = (at: @unchecked) match
+    def apply[E[_]](at: At[E, Pure, ?]): At[E, S, ?] = (at: @unchecked) match
       case _: Place.Only[e] => Place.Absurd[S]()
       case _: Place.Absurd[r] => Place.Absurd[S]()
 
   /** the same row */
   def same[R[_]]: Sub[R, R] = new Sub[R, R]:
-    def apply[E[_]](at: Place[E, R, ?]): Place[E, R, ?] = at
+    def apply[E[_]](at: At[E, R, ?]): At[E, R, ?] = at
 
 trait SubMore extends SubOne:
   /** `R + E`: `R`'s places and `E`'s */
   given more[R[_], E[_], S[_]](using r: Sub[R, S], e: In[E, S]): Sub[R + E, S] = new Sub[R + E, S]:
-    def apply[E2[_]](at: Place[E2, R + E, ?]): Place[E2, S, ?] = (at: @unchecked) match
+    def apply[E2[_]](at: At[E2, R + E, ?]): At[E2, S, ?] = (at: @unchecked) match
       case _: Place.Last[r1, e1] => e.place
       case i: Place.Init[e2, r2, g, rest] => r(i.at)
       case _: Place.Absurd[r] => Place.Absurd[S]()
@@ -112,7 +136,7 @@ trait SubMore extends SubOne:
 trait SubOne:
   /** a row of one: its effect's place in `S` */
   given one[E[_], S[_]](using e: In[E, S]): Sub[E, S] = new Sub[E, S]:
-    def apply[E2[_]](at: Place[E2, E, ?]): Place[E2, S, ?] = (at: @unchecked) match
+    def apply[E2[_]](at: At[E2, E, ?]): At[E2, S, ?] = (at: @unchecked) match
       case _: Place.Only[e] => e.place
       case _: Place.Absurd[r] => Place.Absurd[S]()
 
@@ -125,10 +149,11 @@ trait SubOne:
  */
 enum Taken[E[_], E2[_], Rest[_]]:
   case Mine[E[_], Rest[_]]() extends Taken[E, E, Rest]
-  case Theirs[E[_], E2[_], Rest[_]](at: Place[E2, Rest, ?]) extends Taken[E, E2, Rest]
+  case Theirs[E[_], E2[_], Rest[_]](at: At[E2, Rest, ?]) extends Taken[E, E2, Rest]
 
 object Taken:
-  def apply[E[_], R[_], Rest[_], E2[_]](mine: Place[E, R, Rest], at: Place[E2, R, ?]): Taken[E, E2, Rest] =
+  /** this library's places compared: the places of a row are all of one representation */
+  def apply[E[_], R[_], Rest[_], E2[_]](mine: Place[E, R, Rest], at: At[E2, R, ?]): Taken[E, E2, Rest] =
     (mine: @unchecked) match
       case _: Place.Last[r, e] => (at: @unchecked) match
           case _: Place.Last[r2, e2] => Mine()
@@ -141,7 +166,8 @@ object Taken:
           case _: Place.Last[r2, e2] => Theirs(Place.Last())
           case j: Place.Init[e2, r2, g2, rest2] => Taken(i.at, j.at) match
               case _: Mine[e3, r3] => Mine()
-              case t: Theirs[e3, e4, r4] => Theirs(Place.Init(t.at))
+              case t: Theirs[e3, e4, r4] => (t.at: @unchecked) match
+                  case q: Place[e4, r4, ?] @unchecked => Theirs(Place.Init(q))
           case _: Place.Absurd[r2] => Theirs(Place.Absurd())
       case _: Place.Absurd[r] => Theirs(at)
 
@@ -158,20 +184,20 @@ object Renamings:
    * are — what `intercept` handles, leaving `E`'s handler outside where it was */
   def interposing[E[_], R[_]](at: Place[E, R, ?]): Sub[R, R + E] = new Sub[R, R + E]:
     private val last = Place.Last[R, E]()
-    def apply[E2[_]](p: Place[E2, R, ?]): Place[E2, R + E, ?] = Taken(at, p) match
+    def apply[E2[_]](p: At[E2, R, ?]): At[E2, R + E, ?] = Taken(at, p) match
       case _: Taken.Mine[e, r] => last
       case _: Taken.Theirs[e, e2, r] => (p: @unchecked) match
           case _: Place.Absurd[r2] => Place.Absurd[R + E]()
-          case _ => Place.Init(p)
+          case q: Place[E2, R, ?] @unchecked => Place.Init(q)
 
   private def further[R[_]]: Sub[R, R + Void] = new Sub[R, R + Void]:
-    def apply[E[_]](at: Place[E, R, ?]): Place[E, R + Void, ?] = at match
+    def apply[E[_]](at: At[E, R, ?]): At[E, R + Void, ?] = (at: @unchecked) match
       case _: Place.Absurd[r] => Place.Absurd[R + Void]()
-      case _ => Place.Init(at)
+      case p: Place[E, R, ?] @unchecked => Place.Init(p)
 
   private def onlyToEnd[E[_]]: Sub[E, Pure + E] = new Sub[E, Pure + E]:
     private val last = Place.Last[Pure, E]()
-    def apply[E2[_]](at: Place[E2, E, ?]): Place[E2, Pure + E, ?] = (at: @unchecked) match
+    def apply[E2[_]](at: At[E2, E, ?]): At[E2, Pure + E, ?] = (at: @unchecked) match
       case _: Place.Only[e] => last
       case _: Place.Absurd[r] => Place.Absurd[Pure + E]()
 
@@ -180,7 +206,7 @@ object Renamings:
       private val gNow = Place.Init[G, Rest + G, E, Rest](Place.Last[Rest, G]())
       private val eNow = Place.Last[Rest + G, E]()
       private val inner = toEnd(at)
-      def apply[E2[_]](p: Place[E2, R + G, ?]): Place[E2, Rest + G + E, ?] = (p: @unchecked) match
+      def apply[E2[_]](p: At[E2, R + G, ?]): At[E2, Rest + G + E, ?] = (p: @unchecked) match
         case _: Place.Last[r, g] => gNow
         case _: Place.Absurd[r] => Place.Absurd[Rest + G + E]()
         case i: Place.Init[e2, r, g, rest] => (inner(i.at): @unchecked) match
