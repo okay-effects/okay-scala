@@ -1,6 +1,5 @@
 package okay.scala3
 
-import okay.effects.Cell.Var
 import scala.annotation.tailrec
 
 // THE MACHINE'S CONTINUATIONS, typed by the row the program inside them is at
@@ -49,7 +48,7 @@ object Cek:
 
   /** a handler as it is installed, or put back by `k`: a stateful one with a cell of its own, from its state now */
   private inline def fresh[E[_], T[_], A, B](h: Handler[E, T, A, B]): Handler[E, T, A, B] = h match
-    case s: Handler.Stateful[e, t, a, b, st] => Handler.Stateful(Var(s.cell.state), s.ret, s.answer)
+    case s: Handler.Stateful[e, t, a, b, st] => Handler.Stateful(Cell(s.cell.state), s.ret, s.answer)
     case _ => h
 
   /** the body's value given to the handler */

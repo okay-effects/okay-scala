@@ -3,12 +3,16 @@
 Why okay-scala is built as it is. It is okay-simple's interface written again for Scala 3 alone, and one machine for
 it: what Scala 2 made okay-simple give up is taken back, and nothing is kept that one implementation does not need.
 
-## The same rows
+## The rows, and who depends on whom
 
 A row is a type constructor: an effect (`Choose`, `State % Int`), `Pure`, or `R + E`, which is `[X] =>> Sum[R, E, X]`.
-`Sum` and `Void` (`Pure`) are okay-simple's classes, imported, not copied: a row is a type, and two classes of one name
-would be two types. So the rows are the same on both sides, and okay-simple's interface runs on this machine
-(`okay.effects.cek.OnCek`) with its programs as they are — its whole suite passes there.
+A row is a type, and two classes of one name would be two types: for okay-simple's rows and these to be one, one side
+must take the other's classes. This library depends on nothing, so okay-simple takes them: its Scala 3 build's `Sum`,
+`Void` and `Cell` are aliases of these (its Scala 2 build keeps its own). So its interface runs on this machine
+(`okay.effects.cek.OnCek`, its module `okay-effects-cek`) with its programs as they are — its whole suite passes there.
+
+The library is built by Scala 3.3 LTS: a compiler reads the TASTy of its own version and older, and okay-simple, a
+library itself, is on 3.3 for every Scala 3 since to read it. Its tests run on 3.3 and on 3.9.
 
 What is not shared is what Scala 2 forced on okay-simple: one interface for two compilers (rows by `#L` projections in
 shared source), abstract evidence an implementation fills in, handlers as traits of clauses. Here the evidence is
@@ -66,7 +70,7 @@ enum Handler[E[_], R[_], A, B]:
   case General(ret: A => B ! R, op: [X] => (E[X], X => B ! R) => B ! R)
   case Tail(ret: A => B ! R, answer: [X] => E[X] => X)
   case Abort(ret: A => B ! R, abort: [X] => E[X] => B ! R)
-  case Stateful[...](cell, ret: (S, A) => B ! R, answer: [X] => (E[X], Cell[S]) => X)
+  case Stateful[...](cell: Cell[S], ret: (S, A) => B ! R, answer: [X] => (E[X], Cell[S]) => X)
 ```
 
 A clause is a polymorphic function, `[X] => (op: State[S, X]) => op match ...`, and its match learns `X` from each case.
@@ -94,3 +98,4 @@ print the type lambdas they are, or, under a context bound, nothing at all.
 | `perform(Get[S]())` inferred a strange effect: `S` twice in `State[S, S]` | the standard effects | `perform[State % S](op)`: the effect said |
 | under a context bound the not-found message said `E` and `R` | the compile-error test | opaque `In` and `Split`, a macro's message |
 | `last` and `init` were ambiguous for an effect twice in a row | the prototype | priorities by inheritance |
+| on Scala.js, a program of ten thousand handlers, built eagerly, overflowed the stack while it was built | the test of depth | the program built as the run gets to it, `defer` |

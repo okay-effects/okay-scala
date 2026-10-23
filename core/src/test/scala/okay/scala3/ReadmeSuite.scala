@@ -2,7 +2,7 @@ package okay.scala3
 
 /** the README's example, as it is written there */
 class ReadmeSuite extends munit.FunSuite:
-  def greet[R[_]: {Has[Reader % String], Has[State % Int], Has[Writer % String]}]: Int ! R =
+  def greet[R[_]: Has[Reader % String] : Has[State % Int] : Has[Writer % String]]: Int ! R =
     for
       name <- Reader.ask
       n    <- State.get

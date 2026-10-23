@@ -1,13 +1,14 @@
 # okay-scala
 
-Algebraic effects and handlers for **Scala 3 alone**: the rows of [okay-simple](https://github.com/okay-effects/okay-simple)
-— `A ! R`, `R + E`, `F % S` — with nothing given up for Scala 2, and one reference implementation, a CEK machine.
-Effects are enums, handlers match them, and nothing is cast.
+Algebraic effects and handlers for **Scala 3 alone**: the rows `A ! R`, `R + E`, `F % S`, with nothing given up for
+Scala 2, and one reference implementation, a CEK machine. Effects are enums, handlers match them, and nothing is cast.
+It depends on nothing; [okay-simple](https://github.com/okay-effects/okay-simple) depends on it — its Scala 3 rows are
+this library's, and its interface runs on this machine.
 
 ```scala
 import okay.scala3.*
 
-def greet[R[_]: {Has[Reader % String], Has[State % Int], Has[Writer % String]}]: Int ! R =
+def greet[R[_]: Has[Reader % String] : Has[State % Int] : Has[Writer % String]]: Int ! R =
   for
     name <- Reader.ask
     n    <- State.get
@@ -21,7 +22,7 @@ run(State.run(12)(Reader.run("Ann")(Writer.run(greet[Greeting]))))   // (13, (Li
 run(Writer.run(State.run(12)(Reader.run("Ann")(greet[Greeting]))))   // (List(hello, Ann), (13, 12))
 ```
 
-A program says the effects it needs as context bounds; its words — `Reader.ask`, `State.get` — find their row from
+A program says the effects it needs as context bounds (Scala 3.6 and later also write them `R[_]: {Has[...], Has[...]}`); its words — `Reader.ask`, `State.get` — find their row from
 them, nothing more said. Handlers take their effect from wherever it is in the row, in any order. A row missing an
 effect does not compile, and says so as the row is written:
 
@@ -29,7 +30,7 @@ effect does not compile, and says so as the row is written:
 the effect State % Int is not in the row Reader % String
 ```
 
-## The rows: okay-simple's
+## The rows
 
 | | |
 |---|---|
@@ -41,10 +42,10 @@ the effect State % Int is not in the row Reader % String
 | `Split[E, R, Rest]` | `E` in `R`, and `R` without it `Rest`: what a handler takes |
 | `Sub[R, S]` | every effect of `R` is in `S`: a program put into a bigger row, `p.into[S]` |
 
-`Sum` and `Void` are okay-simple's own classes, so `Int ! Reader % String + State % Int` is the same type in both. Module
-`simple` is okay-simple's interface, `okay.effects.Runner`, on this machine — `okay.effects.cek.OnCek` — and
-okay-simple's own suite of its interface passes on it: its 30 tests, multi-shot, delimited control, generators,
-interception and all.
+`Sum`, `Void` and `Cell` are this library's; okay-simple's Scala 3 build takes them from here (its Scala 2 build keeps its
+own), so `Int ! Reader % String + State % Int` is the same type in both. okay-simple's module `okay-effects-cek` is its
+interface, `okay.effects.Runner`, on this machine — `okay.effects.cek.OnCek` — and okay-simple's own suite of its
+interface passes on it: its 30 tests, multi-shot, delimited control, generators, interception and all.
 
 ## Effects, words, handlers
 
@@ -103,8 +104,9 @@ operation its handler's: no cast. [docs/design.md](docs/design.md) tells how, an
 
 ## Measured
 
-okay-simple's own benchmark programs (`bench/Lanes.scala`, n = 1000), JMH, µs per run, lower is better: on
+okay-simple's own benchmark programs (its `bench/Lanes.scala`, n = 1000), JMH, µs per run, lower is better: on
 okay-simple's machine; the same programs on this machine through `OnCek`; the same programs in this library's words.
+okay-simple keeps this comparison, `benchCek`; this repository's `bench` measures the last column alone.
 
 | | okay-simple machine | its programs on Cek | Cek, own words |
 |---|---|---|---|
@@ -123,5 +125,7 @@ with other work on it: read differences under 10% as noise.
 
 ## Building
 
-Scala 3.9, sbt: `sbt test` runs this library's suite and okay-simple's on the machine; `sbt "bench/Jmh/run"` the
-benchmarks. Not yet released. Apache-2.0.
+sbt. The library is built by Scala 3.3 LTS, so any Scala 3 from 3.3 on reads it, and published for the JVM, Scala.js and
+Scala Native: `sbt +coreJVM/test` runs its suite on Scala 3.3 and 3.9, `sbt -Dplatforms=jvm,js,native coreJS/test
+coreNative/test` on the other platforms, `sbt "bench/Jmh/run"` the benchmark. Publish without `+`: the `_3` artifact is
+3.3's. Not yet released. Apache-2.0.

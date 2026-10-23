@@ -1,6 +1,5 @@
 package okay.scala3
 
-import okay.effects.{Sum, Void}
 import scala.annotation.implicitNotFound
 
 /*
@@ -10,9 +9,16 @@ import scala.annotation.implicitNotFound
  *
  *   Int ! Reader % String + State % Int
  *
- * (`!` binds loosest, `%` tightest). `Sum` and `Void` are okay-simple's own classes, so a row written here is the row
- * written there, and a program of one is the program of the other on this machine (module `simple`).
+ * (`!` binds loosest, `%` tightest). okay-simple's Scala 3 build takes `Sum`, `Void` and `Cell` from here, so a row
+ * written there is the row written here, and its interface runs on this machine.
  */
+
+/** the sum of the row `R` and the effect `E`: a phantom, of no operation of its own. The row `R + E` is `[X] Sum[R, E, X]` */
+final abstract class Sum[R[_], E[_], X]
+
+/** the empty effect: no operation — `Void` has no value, so an operation of it is absurd: it is anything */
+sealed trait Void[X]:
+  def absurd: Nothing
 
 /** the row of no effect: no operation — `Void` has no value, so an operation of it is absurd */
 type Pure[X] = Void[X]

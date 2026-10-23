@@ -1,12 +1,12 @@
 package okay.scala3
 
-import okay.effects.Cell as SimpleCell
-
 /** a program of the value `A` over the row `R`: `Int ! Reader % String + State % Int` */
 infix type ![+A, R[_]] = Prog[R, A]
 
-/** a stateful handler's state, read and written by its clause in place: okay-simple's `Cell` */
-type Cell[S] = SimpleCell[S]
+/** a stateful handler's state, read and written by its clause in place: a final class, nothing virtual */
+final class Cell[S](var state: S):
+  def get: S = state
+  def set(s: S): Unit = state = s
 
 /**
  * A PROGRAM: data, run by the machine (`Cek`). Its own cases are the words below — `pure`, `flatMap`, `map`,
@@ -48,13 +48,13 @@ enum Handler[E[_], R[_], A, B]:
   case Abort(ret: A => B ! R, abort: [X] => E[X] => B ! R)
   /** answered in place with a state of its own, `cell`: each time the handler is installed, or a `k` taken further
    * out resumes it, the machine gives it a cell of its own, from the state of its time */
-  case Stateful[E[_], R[_], A, B, S](cell: SimpleCell.Var[S], ret: (S, A) => B ! R,
+  case Stateful[E[_], R[_], A, B, S](cell: Cell[S], ret: (S, A) => B ! R,
     answer: [X] => (E[X], Cell[S]) => X) extends Handler[E, R, A, B]
 
 object Handler:
   /** a stateful handler from the state `init` */
   def stateful[E[_], R[_], A, B, S](init: S)(ret: (S, A) => B ! R)(answer: [X] => (E[X], Cell[S]) => X)
-    : Handler[E, R, A, B] = Stateful(SimpleCell.Var(init), ret, answer)
+    : Handler[E, R, A, B] = Stateful(Cell(init), ret, answer)
 
 // -- THE WORDS
 

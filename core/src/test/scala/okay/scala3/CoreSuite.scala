@@ -8,14 +8,14 @@ object Programs:
       _ <- State.put(n + 1)
     yield n
 
-  def greet[R[_]: {Has[Reader % String], Has[State % Int], Has[Writer % String]}]: Int ! R =
+  def greet[R[_]: Has[Reader % String] : Has[State % Int] : Has[Writer % String]]: Int ! R =
     for
       name <- Reader.ask
       n <- tick
       _ <- Writer.tell(s"hello, $name")
     yield n + 10
 
-  def divide[R[_]: {Has[Fail % String], Has[State % Int]}](a: Int, b: Int): Int ! R =
+  def divide[R[_]: Has[Fail % String] : Has[State % Int]](a: Int, b: Int): Int ! R =
     for
       _ <- State.put(1)
       q <- if b == 0 then Fail.raise("div by zero") else pure(a / b)
@@ -54,7 +54,7 @@ class CoreSuite extends munit.FunSuite:
   }
 
   test("multi-shot k: a state outside the choice threads through the branches, inside each has its own") {
-    def chosen[R[_]: {Has[Choose], Has[State % Int]}]: Int ! R =
+    def chosen[R[_]: Has[Choose] : Has[State % Int]]: Int ! R =
       for
         x <- Choose.among(List(1, 2, 3))
         _ <- State.modify[Int, R](_ + x)
@@ -139,7 +139,7 @@ class CoreSuite extends munit.FunSuite:
     def deep(n: Int): Int ! Reader % Int =
       if n == 0 then Reader.ask
       else Writer.run[String, Reader % Int + Writer % String, Reader % Int, Int](
-        deep(n - 1).into[Reader % Int + Writer % String]).map(_._2 + 1)
+        defer(deep(n - 1)).into[Reader % Int + Writer % String]).map(_._2 + 1) // built as the run gets to it
     assertEquals(run(Reader.run(5)(deep(10000))), 10005)
   }
 
