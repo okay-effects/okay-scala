@@ -64,6 +64,13 @@ trait At[E[_], R[_], Rest[_]]:
   /** the operation's place `at`, in the same row, met by the handler of `E` here */
   def take[E2[_]](at: At[E2, R, ?]): Taken[E, E2, Rest]
 
+  /** the operation's place outside this handler, if it is not the handler's; `null` if it is. What the machine asks
+   * on its way out, level by level — no proof needed to go on, so a representation can answer making nothing; the
+   * proof, `take`, it asks once, of the handler it stops at */
+  def outside[E2[_]](at: At[E2, R, ?]): At[E2, Rest, ?] | Null = take(at) match
+    case _: Taken.Mine[e, r] => null
+    case t: Taken.Theirs[e, e2, r] => t.at
+
 /** AN OPERATION PAST EVERY HANDLER, at the top of a run of the row `P`: it cannot be — a run's row has no effect, and
  * an operation of no effect has no value — and this says why, for the places of `P`'s representation */
 trait Escape[P[_]]:
@@ -94,6 +101,7 @@ enum Place[E[_], R[_], Rest[_]] extends At[E, R, Rest]:
   case Absurd[R[_]]() extends Place[Void, R, R]
 
   def take[E2[_]](at: At[E2, R, ?]): Taken[E, E2, Rest] = Taken(this, at)
+  override def outside[E2[_]](at: At[E2, R, ?]): At[E2, Rest, ?] | Null = Taken.outside(this, at)
 
 /** the places found: a row of one, then the last effect, then one further in — in this order, so that an effect
  * twice in a row is found at its last place, nearest to the program */
@@ -152,6 +160,24 @@ enum Taken[E[_], E2[_], Rest[_]]:
   case Theirs[E[_], E2[_], Rest[_]](at: At[E2, Rest, ?]) extends Taken[E, E2, Rest]
 
 object Taken:
+  /** the operation's place outside the handler at `mine`, or `null` if it is the handler's: nothing made on the way */
+  def outside[E[_], R[_], Rest[_], E2[_]](mine: Place[E, R, Rest], at: At[E2, R, ?]): At[E2, Rest, ?] | Null =
+    (mine: @unchecked) match
+      case _: Place.Last[r, e] => (at: @unchecked) match
+          case _: Place.Last[r2, e2] => null
+          case i: Place.Init[e2, r2, g, rest] => i.at
+          case _: Place.Absurd[r2] => Place.Absurd()
+      case _: Place.Only[e] => (at: @unchecked) match
+          case _: Place.Only[e2] => null
+          case _: Place.Absurd[r2] => Place.Absurd()
+      case i: Place.Init[e, r, g, rest] => (at: @unchecked) match
+          case _: Place.Last[r2, e2] => Place.Last()
+          case j: Place.Init[e2, r2, g2, rest2] => (outside(i.at, j.at): @unchecked) match
+              case null => null
+              case q: Place[E2, rest, ?] @unchecked => Place.Init(q)
+          case _: Place.Absurd[r2] => Place.Absurd()
+      case _: Place.Absurd[r] => at
+
   /** this library's places compared: the places of a row are all of one representation */
   def apply[E[_], R[_], Rest[_], E2[_]](mine: Place[E, R, Rest], at: At[E2, R, ?]): Taken[E, E2, Rest] =
     (mine: @unchecked) match

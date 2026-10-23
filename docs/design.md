@@ -22,6 +22,7 @@ The library is built by Scala 3.3 LTS: a compiler reads the TASTy of its own ver
 ```scala
 trait At[E[_], R[_], Rest[_]]:
   def take[E2[_]](at: At[E2, R, ?]): Taken[E, E2, Rest]
+  def outside[E2[_]](at: At[E2, R, ?]): At[E2, Rest, ?] | Null    // by default through take
 
 trait Escape[P[_]]:
   def apply[E[_], X](at: At[E, P, ?], op: E[X]): Nothing
@@ -31,7 +32,10 @@ A place of `E` in `R` is whatever compares itself with another place of the same
 says the operation's effect is the handler's, or `Theirs`, its place outside. This library's places, `Place`, are one
 `At`, and the machine compares the commonest of them at once on its hot path — the last place against the last, a row
 of one against itself — in a method kept small for the JIT to inline; anything else goes to a loop of its own
-(`inPlaceTaken`, `outTaken`) and stays there. Measured against the machine before `At`, its own programs allocate the
+(`inPlaceTaken`, `outTaken`) and stays there. That loop asks each level `outside` — the operation's place beyond
+it, or `null` at its own handler — which needs no proof and so can make nothing; the proof, `take`, it asks once, at
+the handler it stops at. okay-simple's adapter answers both making nothing, its proof kept in the handler's place:
+its runs allocate what okay-simple's own machine allocates, to a few hundred bytes a run. Measured against the machine before `At`, its own programs allocate the
 same bytes per run and run in the same time, within the noise. Another representation compares its own: okay-simple's
 adapter wraps okay-simple's places and calls okay-simple's `take`, whose `Mine` it turns into the machine's, the equality
 proved where okay-simple's own types show it.
