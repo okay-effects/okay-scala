@@ -3,14 +3,6 @@ package okay.scala3
 /** a program of the value `A` over the row `R`: `Int ! Reader % String + State % Int` */
 infix type ![+A, R[_]] = Prog[R, A]
 
-/** a stateful handler's state, read and written by its clause in place: `get` and `set` final, nothing virtual on
- * the way of an operation. `fresh` is the cell a handler is given when it is installed or put back by a `k` — a
- * subclass may carry another library's view of a cell, and give its own kind again */
-class Cell[S](var state: S):
-  final def get: S = state
-  final def set(s: S): Unit = state = s
-  def fresh: Cell[S] = Cell(state)
-
 /**
  * A PROGRAM: data, run by the machine (`Cek`). Its own cases are the words below — `pure`, `flatMap`, `map`,
  * `defer`, `perform`, `handle`, `into`; `Resume` is a `k` resumed, made by the machine only.
@@ -31,7 +23,30 @@ enum Prog[R[_], +A]:
   case Remap[R1[_], R2[_], A](p: Prog[R1, A], rename: Sub[R1, R2]) extends Prog[R2, A]
   /** `k` resumed with `x`: the frames inside and the levels crossed put back, under the general handler `h` */
   case Resume[Rest[_], X, B, R0[_], V0, E[_], R[_], A](inner: Frames[R0, X, V0], crossed: Crossed[R0, V0, R, A],
-    at: At[E, R, Rest], h: Handler[E, Rest, A, B], x: X) extends Prog[Rest, B]
+                                                       at: At[E, R, Rest], h: Handler[E, Rest, A, B], x: X) extends Prog[Rest, B]
+
+/** σ, THE PURE CONTINUATION: the binds from a value `X` to the value `V` of the nearest handler's body, at `R` */
+enum Frames[R[_], -X, +V]:
+  case End[R[_], V]() extends Frames[R, V, V]
+  case Bind[R[_], X, Y, V](f: X => Prog[R, Y], rest: Frames[R, Y, V]) extends Frames[R, X, V]
+  case Map[R[_], X, Y, V](f: X => Y, rest: Frames[R, Y, V]) extends Frames[R, X, V]
+
+/** the levels a `k` took, from the innermost's body at `RIn` of `VIn` to the outermost's at `ROut` of `VOut`: data, put
+ * back by `Cek.put` wherever `k` is resumed */
+enum Crossed[RIn[_], VIn, ROut[_], VOut]:
+  case Nothing[R[_], V]() extends Crossed[R, V, R, V]
+  case Handled[RIn[_], VIn, E[_], R[_], Rest[_], A, B, W](inner: Crossed[RIn, VIn, R, A], at: At[E, R, Rest],
+                                                          h: Handler[E, Rest, A, B], outside: Frames[Rest, B, W]) extends Crossed[RIn, VIn, Rest, W]
+  case Renamed[RIn[_], VIn, R1[_], R2[_], A, W](inner: Crossed[RIn, VIn, R1, A], rename: Sub[R1, R2],
+                                                outside: Frames[R2, A, W]) extends Crossed[RIn, VIn, R2, W]
+
+/** a stateful handler's state, read and written by its clause in place: `get` and `set` final, nothing virtual on
+ * the way of an operation. `fresh` is the cell a handler is given when it is installed or put back by a `k` — a
+ * subclass may carry another library's view of a cell, and give its own kind again */
+class Cell[S](var state: S):
+  final def get: S = state
+  final def set(s: S): Unit = state = s
+  def fresh: Cell[S] = Cell(state)
 
 /**
  * A HANDLER OF `E`, the row outside it `R`, the body's value `A`, its own `B`: of one of four shapes, which the
@@ -53,7 +68,7 @@ enum Handler[E[_], R[_], A, B]:
   /** answered in place with a state of its own, `cell`: each time the handler is installed, or a `k` taken further
    * out resumes it, the machine gives it a cell of its own, from the state of its time */
   case Stateful[E[_], R[_], A, B, S](cell: Cell[S], ret: (S, A) => B ! R,
-    answer: [X] => (E[X], Cell[S]) => X) extends Handler[E, R, A, B]
+                                     answer: [X] => (E[X], Cell[S]) => X) extends Handler[E, R, A, B]
 
 /** a handler of each shape, its value's clause first, its operations' after: `Handler.tail[Reader % String, R, A,
  * A](pure)([X] => (op: Reader[String, X]) => op match ...)`. Each gives a `Handler`, whatever its shape */
@@ -70,10 +85,11 @@ object Handler:
 
   /** a stateful handler from the state `init` */
   def stateful[E[_], R[_], A, B, S](init: S)(ret: (S, A) => B ! R)(answer: [X] => (E[X], Cell[S]) => X)
-    : Handler[E, R, A, B] = Stateful(Cell(init), ret, answer)
+  : Handler[E, R, A, B] = Stateful(Cell(init), ret, answer)
+
   /** the same from a cell of one's own kind, its `fresh` giving the same kind */
   def stateful[E[_], R[_], A, B, S](cell: Cell[S])(ret: (S, A) => B ! R)(answer: [X] => (E[X], Cell[S]) => X)
-    : Handler[E, R, A, B] = Stateful(cell, ret, answer)
+  : Handler[E, R, A, B] = Stateful(cell, ret, answer)
 
 // -- THE WORDS
 
@@ -114,7 +130,7 @@ extension [A, R[_]](p: A ! R)
 
 /** `E` handled by `h` from wherever it is in `p`'s row: the program over the rest */
 def handle[E[_], R[_], Rest[_], A, B](p: A ! R, h: Handler[E, Rest, A, B])(using at: Split[E, R, Rest])
-  : B ! Rest = Prog.Handle(p, at.place, h)
+: B ! Rest = Prog.Handle(p, at.place, h)
 
 /**
  * `E` INTERCEPTED in `p`: each operation of `E` given to `h` first, with `k` the rest of `p`, still intercepted. The
