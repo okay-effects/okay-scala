@@ -83,7 +83,8 @@ the frames outside it. Here:
 
 Everything is indexed by the row its program is at, so each step's types line up and the loop needs no cast. The loop is
 `@tailrec`: no run takes stack. Its hot cases — a value into a bind, a bind, an operation answered in place, a `k`
-resumed — are in the loop, kept small; entering or leaving a handler is `cold`'s.
+resumed — are in the loop, kept small for the JIT; entering a handler (`enter`), leaving one (`leave`) and an
+operation going out to a general handler (`out`) are methods of their own.
 
 Multi-shot needs no copying: σ and κ are immutable data, so resuming `k` twice puts the same data back twice. The one
 mutable thing, a stateful handler's cell, is given afresh — from the state it has then — each time its handler is
