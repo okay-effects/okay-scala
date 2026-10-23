@@ -47,11 +47,14 @@ object Choose:
       case Nil => pending.back(done)
       case x :: Nil => found => k(x).flatMap(go => go(pending)(found))
       case x :: more => found => k(x).flatMap(go => go(pending.push(below => ways(more, k, below)))(found))
-    handle(p, Handler.general[Choose, Rest, A, Go](a => okay.scala3.pure(pending => found => pending.back(done)(a :: found)))(
+    val value = (a: A) => okay.scala3.pure[Go, Rest](pending => found => pending.back(done)(a :: found))
+    handle(p, Handler.general[Choose, Rest, A, Go](value)(
       [X] => (op: Choose[X], k: X => Go ! Rest) => op match
         case Among(xs) => okay.scala3.pure[Go, Rest](pending => ways(xs, k, pending))
-        case Mark() => okay.scala3.pure[Go, Rest](pending => found => k(pending.depth).flatMap(go => go(pending)(found)))
-        case Cut(m) => okay.scala3.pure[Go, Rest](pending => found => k(()).flatMap(go => go(pending.cutTo(m))(found)))))
+        case Mark() =>
+          okay.scala3.pure[Go, Rest](pending => found => k(pending.depth).flatMap(go => go(pending)(found)))
+        case Cut(m) =>
+          okay.scala3.pure[Go, Rest](pending => found => k(()).flatMap(go => go(pending.cutTo(m))(found)))))
       .flatMap(go => go(Pending.empty)(Nil))
 
   /** the first way the choices go to a value, the others not tried; none, `None` */

@@ -30,7 +30,8 @@ enum Random[X]:
 object Random:
   def long[R[_]](using In[Random, R]): Long ! R = perform[Random](NextLong())
   /** a number in `[0, bound)`, `bound` positive */
-  def int[R[_]](bound: Int)(using In[Random, R]): Int ! R = long[R].map(n => java.lang.Math.floorMod(n, bound.toLong).toInt)
+  def int[R[_]](bound: Int)(using In[Random, R]): Int ! R =
+    long[R].map(n => java.lang.Math.floorMod(n, bound.toLong).toInt)
   /** a number in `[0, 1)` */
   def double[R[_]](using In[Random, R]): Double ! R = long[R].map(n => (n >>> 11) * 1.1102230246251565e-16)
 

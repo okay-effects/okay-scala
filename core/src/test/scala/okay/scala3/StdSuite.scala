@@ -162,7 +162,8 @@ class StdSuite extends munit.FunSuite:
   test("released through the handlers between the failure and its handler") {
     val log = collection.mutable.ListBuffer.empty[String]
     type R[X] = (Fail % String + State % Int)[X]
-    val p: Int ! R = ensuring(State.put[Int, R](1).andThen(Fail.raise[String, R]("boom")).map(_ => 2))(log += "released")
+    val p: Int ! R =
+      ensuring(State.put[Int, R](1).andThen(Fail.raise[String, R]("boom")).map(_ => 2))(log += "released")
     assertEquals(run(Fail.run(State.run(0)(p))), Left("boom"))
     assertEquals(log.toList, List("released"))
   }
