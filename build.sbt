@@ -46,5 +46,9 @@ lazy val core = crossProject(platforms: _*).crossType(CrossType.Pure).in(file("c
 lazy val bench = (project in file("bench")).dependsOn(core.jvm).enablePlugins(JmhPlugin)
   .settings(name := "okay-scala-bench", publish / skip := true)
 
+/** THE BENCHMARK: `sbt bench` — the machine on okay-simple's programs (JMH: 2 forks, 5 warm-ups and 5 measurements of a
+ * second each, µs per run, the allocation per run beside it). More JMH options after it: `sbt "bench -f 4 .*stateLoop"` */
+addCommandAlias("bench", "bench/Jmh/run -f 2 -wi 5 -i 5 -w 1 -r 1 -prof gc CekBenchmark")
+
 lazy val root = (project in file(".")).aggregate((core.componentProjects.map(p => p: sbt.ProjectReference) :+
   (bench: sbt.ProjectReference)): _*).settings(publish / skip := true)
