@@ -30,7 +30,7 @@ enum Levels[R[_], V, Z]:
  * inference: no cast.
  */
 object Cek:
-  /** where the run goes on after a cold step */
+  /** where the run goes on after a step out of the loop */
   final case class State[R[_], X, V, Z](c: Prog[R, X], σ: Frames[R, X, V], κ: Levels[R, V, Z])
 
   /** a handler as it is installed, or put back by `k`: a stateful one with a cell of its own, from its state now */
@@ -79,7 +79,8 @@ object Cek:
       case r: Levels.Renamed[r1, r2, a, w, z] => inPlaceTaken[E, r2, w, Z](r.rename(at), r.up)
       case _: Levels.Top[p, z] => null
 
-  /** the loop: the hot steps here, small; a handler entered or left, an operation going out, in `cold` */
+  /** the loop: the hot steps here, small; a handler entered or left (`enter`, `leave`), an operation going out to a
+   * general handler (`out`), each a method of its own */
   @tailrec private def loop[R[_], X, V, Z](c: Prog[R, X], σ: Frames[R, X, V], κ: Levels[R, V, Z]): Z = c match
     case v: Prog.Value[r, x] => σ match
         case b: Frames.Bind[r2, a, y, v2] => loop[R, y, V, Z](b.f(v.a), b.rest, κ)
@@ -87,7 +88,7 @@ object Cek:
         case _: Frames.End[r2, v2] => κ match
             case _: Levels.Top[p, z] => v.a
             case _ =>
-              val s = cold(c, σ, κ)
+              val s = leave(v.a, κ)
               loop(s.c, s.σ, s.κ)
     case b: Prog.FlatMap[r, y, x] => loop[R, y, V, Z](b.p, Frames.Bind[R, y, x, V](b.f, σ), κ)
     case m: Prog.Map[r, y, x] => loop[R, y, V, Z](m.p, Frames.Map[R, y, x, V](m.f, σ), κ)
@@ -114,27 +115,21 @@ object Cek:
         case f: Frames.Bind[r2, x2, y, v] => loop[r0, y, v0, Z](f.f(r.x), f.rest, κ2)
         case _ => loop[r0, x, v0, Z](Prog.Value(r.x), r.inner, κ2)
     case _ =>
-      val s = cold(c, σ, κ)
+      val s = enter(c, σ, κ)
       loop(s.c, s.σ, s.κ)
 
-  /** the cold steps: a handler's body ended, a handler or a renaming entered */
-  private def cold[R[_], X, V, Z](c: Prog[R, X], σ: Frames[R, X, V], κ: Levels[R, V, Z]): State[?, ?, ?, Z] = c match
-    case v: Prog.Value[r, x] => σ match
-        case b: Frames.Bind[r2, a, y, v2] => State[R, y, V, Z](b.f(v.a), b.rest, κ)
-        case m: Frames.Map[r2, a, y, v2] => State[R, y, V, Z](Prog.Value(m.f(v.a)), m.rest, κ)
-        case _: Frames.End[r2, v2] => κ match
-            case l: Levels.Handled[e, r, rest, a, b, w, z] => State[rest, b, w, Z](ret(l.h, v.a), l.outside, l.up)
-            case l: Levels.Renamed[r1, r2, a, w, z] => State[r2, a, w, Z](Prog.Value(v.a), l.outside, l.up)
-            case _: Levels.Top[p, z] => State[R, X, V, Z](c, σ, κ) // the end: given back to the loop as it is
-    case h: Prog.Handle[e, r, rest, a, b] =>
-      State[r, a, a, Z](h.p, Frames.End(), Levels.Handled[e, r, R, a, b, V, Z](h.at, fresh(h.h), σ, κ))
-    case r: Prog.Remap[r1, r2, a] => State[r1, a, a, Z](r.p, Frames.End(), Levels.Renamed[r1, R, a, V, Z](r.rename, σ, κ))
-    case r: Prog.Resume[rest, x, b, r0, v0, e, rr, a] =>
-      State[r0, x, v0, Z](Prog.Value(r.x), r.inner, put(r.crossed, Levels.Handled[e, rr, R, a, b, V, Z](r.at, r.h, σ, κ)))
-    case p: Prog.Perform[r, e, x] => out[e, R, x, V, R, V, Z](p.at, p.op, σ, Crossed.Nothing[R, V](), κ)
-    case b: Prog.FlatMap[r, y, x] => State[R, y, V, Z](b.p, Frames.Bind[R, y, x, V](b.f, σ), κ)
-    case m: Prog.Map[r, y, x] => State[R, y, V, Z](m.p, Frames.Map[R, y, x, V](m.f, σ), κ)
-    case d: Prog.Defer[r, x] => State[R, X, V, Z](d.p(), σ, κ)
+  /** a handler's body ended with `a`, at its level: the handler's value clause, or a renaming left */
+  private def leave[R[_], V, Z](a: V, κ: Levels[R, V, Z]): State[?, ?, ?, Z] = (κ: @unchecked) match
+    case l: Levels.Handled[e, r, rest, a, b, w, z] => State[rest, b, w, Z](ret(l.h, a), l.outside, l.up)
+    case l: Levels.Renamed[r1, r2, a, w, z] => State[r2, a, w, Z](Prog.Value(a), l.outside, l.up)
+
+  /** a handler or a renaming entered: a level of its own, the body's frames from nothing */
+  private def enter[R[_], X, V, Z](c: Prog[R, X], σ: Frames[R, X, V], κ: Levels[R, V, Z]): State[?, ?, ?, Z] =
+    (c: @unchecked) match
+      case h: Prog.Handle[e, r, rest, a, b] =>
+        State[r, a, a, Z](h.p, Frames.End(), Levels.Handled[e, r, R, a, b, V, Z](h.at, fresh(h.h), σ, κ))
+      case r: Prog.Remap[r1, r2, a] =>
+        State[r1, a, a, Z](r.p, Frames.End(), Levels.Renamed[r1, R, a, V, Z](r.rename, σ, κ))
 
   /** an operation going out to its handler: the levels it crosses taken into `crossed` */
   @tailrec private def out[E[_], R0[_], X, V0, R[_], V, Z](at: At[E, R, ?], op: E[X], inner: Frames[R0, X, V0],

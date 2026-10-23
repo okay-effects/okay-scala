@@ -14,7 +14,7 @@ import scala.annotation.implicitNotFound
  */
 
 /** the sum of the row `R` and the effect `E`: a phantom, of no operation of its own. The row `R + E` is `[X] Sum[R, E, X]` */
-final abstract class Sum[R[_], E[_], X]
+sealed trait Sum[R[_], E[_], X]
 
 /** the empty effect: no operation — `Void` has no value, so an operation of it is absurd: it is anything */
 sealed trait Void[X]:
@@ -164,78 +164,57 @@ object Taken:
   def outside[E[_], R[_], Rest[_], E2[_]](mine: Place[E, R, Rest], at: At[E2, R, ?]): At[E2, Rest, ?] | Null =
     (mine: @unchecked) match
       case _: Place.Last[r, e] => (at: @unchecked) match
-          case _: Place.Last[r2, e2] => null
-          case i: Place.Init[e2, r2, g, rest] => i.at
-          case _: Place.Absurd[r2] => Place.Absurd()
+        case _: Place.Last[r2, e2] => null
+        case i: Place.Init[e2, r2, g, rest] => i.at
+        case _: Place.Absurd[r2] => Place.Absurd()
       case _: Place.Only[e] => (at: @unchecked) match
-          case _: Place.Only[e2] => null
-          case _: Place.Absurd[r2] => Place.Absurd()
+        case _: Place.Only[e2] => null
+        case _: Place.Absurd[r2] => Place.Absurd()
       case i: Place.Init[e, r, g, rest] => (at: @unchecked) match
-          case _: Place.Last[r2, e2] => Place.Last()
-          case j: Place.Init[e2, r2, g2, rest2] => (outside(i.at, j.at): @unchecked) match
-              case null => null
-              case q: Place[E2, rest, ?] @unchecked => Place.Init(q)
-          case _: Place.Absurd[r2] => Place.Absurd()
+        case _: Place.Last[r2, e2] => Place.Last()
+        case j: Place.Init[e2, r2, g2, rest2] => (outside(i.at, j.at): @unchecked) match
+          case null => null
+          case q: Place[E2, rest, ?] @unchecked => Place.Init(q)
+        case _: Place.Absurd[r2] => Place.Absurd()
       case _: Place.Absurd[r] => at
 
   /** this library's places compared: the places of a row are all of one representation */
   def apply[E[_], R[_], Rest[_], E2[_]](mine: Place[E, R, Rest], at: At[E2, R, ?]): Taken[E, E2, Rest] =
     (mine: @unchecked) match
       case _: Place.Last[r, e] => (at: @unchecked) match
-          case _: Place.Last[r2, e2] => Mine()
-          case i: Place.Init[e2, r2, g, rest] => Theirs(i.at)
-          case _: Place.Absurd[r2] => Theirs(Place.Absurd())
+        case _: Place.Last[r2, e2] => Mine()
+        case i: Place.Init[e2, r2, g, rest] => Theirs(i.at)
+        case _: Place.Absurd[r2] => Theirs(Place.Absurd())
       case _: Place.Only[e] => (at: @unchecked) match
-          case _: Place.Only[e2] => Mine()
-          case _: Place.Absurd[r2] => Theirs(Place.Absurd())
+        case _: Place.Only[e2] => Mine()
+        case _: Place.Absurd[r2] => Theirs(Place.Absurd())
       case i: Place.Init[e, r, g, rest] => (at: @unchecked) match
-          case _: Place.Last[r2, e2] => Theirs(Place.Last())
-          case j: Place.Init[e2, r2, g2, rest2] => Taken(i.at, j.at) match
-              case _: Mine[e3, r3] => Mine()
-              case t: Theirs[e3, e4, r4] => (t.at: @unchecked) match
-                  case q: Place[e4, r4, ?] @unchecked => Theirs(Place.Init(q))
-          case _: Place.Absurd[r2] => Theirs(Place.Absurd())
+        case _: Place.Last[r2, e2] => Theirs(Place.Last())
+        case j: Place.Init[e2, r2, g2, rest2] => Taken(i.at, j.at) match
+          case _: Mine[e3, r3] => Mine()
+          case t: Theirs[e3, e4, r4] => (t.at: @unchecked) match
+            case q: Place[e4, r4, ?] @unchecked => Theirs(Place.Init(q))
+        case _: Place.Absurd[r2] => Theirs(Place.Absurd())
       case _: Place.Absurd[r] => Theirs(at)
 
-/** renamings the machine and `simple` make: `E` taken to the end; `E` put at a new last place */
+/** the renamings `split` and `intercept` make, each by one rule: the operation is `E`'s (`Taken.Mine`), or another's */
 object Renamings:
-  /** `R`'s places renamed to `Rest + E`'s: `E` from `at` to the end, the others in their order */
-  def toEnd[E[_], R[_], Rest[_]](at: Place[E, R, Rest]): Sub[R, Rest + E] = (at: @unchecked) match
-    case _: Place.Only[e] => onlyToEnd[E]
-    case _: Place.Last[r, e] => Sub.same[R]
-    case i: Place.Init[e, r, g, rest] => initToEnd[E, r, g, rest](i.at)
-    case _: Place.Absurd[r] => further[R]
+  /** `R`'s places renamed to `Rest + E`'s: `E`'s from `at` to the end; another's to its place in `Rest`, one in */
+  def toEnd[E[_], R[_], Rest[_]](at: Place[E, R, Rest]): Sub[R, Rest + E] = new Sub[R, Rest + E]:
+    private val last = Place.Last[Rest, E]()
+    def apply[E2[_]](p: At[E2, R, ?]): At[E2, Rest + E, ?] = Taken(at, p) match
+      case _: Taken.Mine[e, r] => last
+      case t: Taken.Theirs[e, e2, r] => further[E2, Rest, E](t.at)
 
-  /** `R`'s places renamed to `R + E`'s: the operations of `E` at `at` to the new last place, the others where they
-   * are — what `intercept` handles, leaving `E`'s handler outside where it was */
+  /** `R`'s places renamed to `R + E`'s: `E`'s at `at` to the new last place, another's where it is, one in — what
+   * `intercept` handles, leaving `E`'s handler outside where it was */
   def interposing[E[_], R[_]](at: Place[E, R, ?]): Sub[R, R + E] = new Sub[R, R + E]:
     private val last = Place.Last[R, E]()
     def apply[E2[_]](p: At[E2, R, ?]): At[E2, R + E, ?] = Taken(at, p) match
       case _: Taken.Mine[e, r] => last
-      case _: Taken.Theirs[e, e2, r] => (p: @unchecked) match
-          case _: Place.Absurd[r2] => Place.Absurd[R + E]()
-          case q: Place[E2, R, ?] @unchecked => Place.Init(q)
+      case _: Taken.Theirs[e, e2, r] => further[E2, R, E](p)
 
-  private def further[R[_]]: Sub[R, R + Void] = new Sub[R, R + Void]:
-    def apply[E[_]](at: At[E, R, ?]): At[E, R + Void, ?] = (at: @unchecked) match
-      case _: Place.Absurd[r] => Place.Absurd[R + Void]()
-      case p: Place[E, R, ?] @unchecked => Place.Init(p)
-
-  private def onlyToEnd[E[_]]: Sub[E, Pure + E] = new Sub[E, Pure + E]:
-    private val last = Place.Last[Pure, E]()
-    def apply[E2[_]](at: At[E2, E, ?]): At[E2, Pure + E, ?] = (at: @unchecked) match
-      case _: Place.Only[e] => last
-      case _: Place.Absurd[r] => Place.Absurd[Pure + E]()
-
-  private def initToEnd[E[_], R[_], G[_], Rest[_]](at: Place[E, R, Rest]): Sub[R + G, Rest + G + E] =
-    new Sub[R + G, Rest + G + E]:
-      private val gNow = Place.Init[G, Rest + G, E, Rest](Place.Last[Rest, G]())
-      private val eNow = Place.Last[Rest + G, E]()
-      private val inner = toEnd(at)
-      def apply[E2[_]](p: At[E2, R + G, ?]): At[E2, Rest + G + E, ?] = (p: @unchecked) match
-        case _: Place.Last[r, g] => gNow
-        case _: Place.Absurd[r] => Place.Absurd[Rest + G + E]()
-        case i: Place.Init[e2, r, g, rest] => (inner(i.at): @unchecked) match
-            case _: Place.Last[r3, e3] => eNow
-            case j: Place.Init[e4, r4, g4, rest4] => Place.Init(Place.Init[E2, Rest, G, rest4](j.at))
-            case _: Place.Absurd[r5] => Place.Absurd[Rest + G + E]()
+  /** a place in `R` as a place in `R + G`: one further in — the empty effect's staying the empty effect's */
+  private def further[E[_], R[_], G[_]](p: At[E, R, ?]): At[E, R + G, ?] = (p: @unchecked) match
+    case _: Place.Absurd[r] => Place.Absurd[R + G]()
+    case q: Place[E, R, ?] @unchecked => Place.Init(q)
