@@ -116,7 +116,7 @@ okay-simple's machine; the same programs on this machine through `OnCek`; the sa
 | `ask` across four | 30.2 | 29.2 | 15.7 |
 | state | 17.3 | 18.1 | 19.0 |
 
-The machine is as fast as okay-simple's tuned one, with no cast and a third of its code. The gap across four handlers is
+The machine is as fast as okay-simple's tuned one, with no cast. The gap across four handlers is
 not the machine's: okay-simple's `Choose` handler is a general handler with a state of its own, which its interface
 makes of functions of the state; here `Choose` is a plain general handler. One run, 2 forks × 5 iterations, on a laptop
 with other work on it: read differences under 10% as noise.
