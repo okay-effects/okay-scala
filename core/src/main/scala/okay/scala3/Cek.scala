@@ -2,19 +2,6 @@ package okay.scala3
 
 import scala.annotation.tailrec
 
-// THE MACHINE'S CONTINUATIONS, typed by the row the program inside them is at
-
-/** κ, THE HANDLERS: the program inside at `R`, its body's value `V`, the run's `Z` */
-enum Levels[R[_], V, Z]:
-  /** the top: the run's row `P`, of no effect; an operation that got here, past every handler, `escape` refutes */
-  case Top[P[_], Z](escape: Escape[P]) extends Levels[P, Z, Z]
-  /** a handler of `E` at its place `at` in `R`; outside it, the frames from `B` to `W` at `Rest`, and the levels */
-  case Handled[E[_], R[_], Rest[_], A, B, W, Z](at: At[E, R, Rest], h: Handler[E, Rest, A, B],
-    outside: Frames[Rest, B, W], up: Levels[Rest, W, Z]) extends Levels[R, A, Z]
-  /** a renaming of places, from the program's `R1` to `R2` outside */
-  case Renamed[R1[_], R2[_], A, W, Z](rename: Sub[R1, R2], outside: Frames[R2, A, W], up: Levels[R2, W, Z])
-    extends Levels[R1, A, Z]
-
 /**
  * THE CEK MACHINE (Felleisen and Friedman), with the generalised continuations of Hillerström, Lindley and Atkey
  * ("Effect handlers via generalised continuations", 2020): its state is ⟨C, E, K⟩ — C the program to run, E its
@@ -32,25 +19,6 @@ enum Levels[R[_], V, Z]:
 object Cek:
   /** where the run goes on after a step out of the loop */
   final case class State[R[_], X, V, Z](c: Prog[R, X], σ: Frames[R, X, V], κ: Levels[R, V, Z])
-
-  /** a handler as it is installed, or put back by `k`: a stateful one with a cell of its own, from its state now */
-  private inline def fresh[E[_], T[_], A, B](h: Handler[E, T, A, B]): Handler[E, T, A, B] = h match
-    case s: Handler.Stateful[e, t, a, b, st] => Handler.Stateful(s.cell.fresh, s.ret, s.answer)
-    case _ => h
-
-  /** the body's value given to the handler */
-  private inline def ret[E[_], T[_], A, B](h: Handler[E, T, A, B], a: A): Prog[T, B] = h match
-    case g: Handler.General[e, t, a2, b] => g.ret(a)
-    case t: Handler.Tail[e, t2, a2, b] => t.ret(a)
-    case s: Handler.Stateful[e, t, a2, b, st] => s.ret(s.cell.state, a)
-    case x: Handler.Abort[e, t, a2, b] => x.ret(a)
-
-  /** the levels crossed put back on κ */
-  @tailrec private def put[RIn[_], VIn, ROut[_], VOut, Z](crossed: Crossed[RIn, VIn, ROut, VOut],
-    κ: Levels[ROut, VOut, Z]): Levels[RIn, VIn, Z] = crossed match
-    case _: Crossed.Nothing[r, v] => κ
-    case h: Crossed.Handled[ri, vi, e, r, rest, a, b, w] => put(h.inner, Levels.Handled(h.at, fresh(h.h), h.outside, κ))
-    case r: Crossed.Renamed[ri, vi, r1, r2, a, w] => put(r.inner, Levels.Renamed(r.rename, r.outside, κ))
 
   /** the handler of the operation at `at`, if it answers in place; `null` if it does not, or there is none. Small,
    * for the JIT to inline: the commonest places compared here, anything else by `inPlaceTaken` */
@@ -113,7 +81,7 @@ object Cek:
     case d: Prog.Defer[r, x] => steps[R, X, V, Z](d.p(), σ, κ)
     // `k` resumed: the levels it took and its handler put back, the value straight into the frame inside
     case r: Prog.Resume[rest, x, b, r0, v0, e, rr, a] =>
-      val κ2 = put(r.crossed, Levels.Handled[e, rr, R, a, b, V, Z](r.at, r.h, σ, κ))
+      val κ2 = Crossed.put(r.crossed, Levels.Handled[e, rr, R, a, b, V, Z](r.at, r.h, σ, κ))
       r.inner match
         case f: Frames.Bind[r2, x2, y, v] => steps[r0, y, v0, Z](f.f(r.x), f.rest, κ2)
         case _ => steps[r0, x, v0, Z](Prog.Value(r.x), r.inner, κ2)
@@ -123,14 +91,14 @@ object Cek:
 
   /** a handler's body ended with `a`, at its level: the handler's value clause, or a renaming left */
   private def leave[R[_], V, Z](a: V, κ: Levels[R, V, Z]): State[?, ?, ?, Z] = (κ: @unchecked) match
-    case l: Levels.Handled[e, r, rest, a, b, w, z] => State[rest, b, w, Z](ret(l.h, a), l.outside, l.up)
+    case l: Levels.Handled[e, r, rest, a, b, w, z] => State[rest, b, w, Z](Handler.ret(l.h, a), l.outside, l.up)
     case l: Levels.Renamed[r1, r2, a, w, z] => State[r2, a, w, Z](Prog.Value(a), l.outside, l.up)
 
   /** a handler or a renaming entered: a level of its own, the body's frames from nothing */
   private def enter[R[_], X, V, Z](c: Prog[R, X], σ: Frames[R, X, V], κ: Levels[R, V, Z]): State[?, ?, ?, Z] =
     (c: @unchecked) match
       case h: Prog.Handle[e, r, rest, a, b] =>
-        State[r, a, a, Z](h.p, Frames.End(), Levels.Handled[e, r, R, a, b, V, Z](h.at, fresh(h.h), σ, κ))
+        State[r, a, a, Z](h.p, Frames.End(), Levels.Handled[e, r, R, a, b, V, Z](h.at, Handler.fresh(h.h), σ, κ))
       case r: Prog.Remap[r1, r2, a] =>
         State[r1, a, a, Z](r.p, Frames.End(), Levels.Renamed[r1, R, a, V, Z](r.rename, σ, κ))
       case e: Prog.Ensure[r, a] => State[R, a, V, Z](e.p, Frames.Finally[R, a, V](e.release, σ), κ)
@@ -174,31 +142,12 @@ object Cek:
       State[Rest, B, W, Z](g.op[X](op, k), l.outside, l.up)
     case a: Handler.Abort[e, t, a2, b] =>
       // the rest dropped: what it holds released, innermost first
-      released(inner)
-      released(crossed)
+      Frames.released(inner)
+      Crossed.released(crossed)
       State[Rest, B, W, Z](a.abort[X](op), l.outside, l.up)
-    case t: Handler.Tail[e, t2, a2, b] => State[R0, X, V0, Z](Prog.Value(t.answer[X](op)), inner, put(crossed, l))
+    case t: Handler.Tail[e, t2, a2, b] => State[R0, X, V0, Z](Prog.Value(t.answer[X](op)), inner, Crossed.put(crossed, l))
     case s: Handler.Stateful[e, t, a2, b, st] =>
-      State[R0, X, V0, Z](Prog.Value(s.answer[X](op, s.cell)), inner, put(crossed, l))
-
-  /** the frames' `release`s run, innermost first: they are dropped */
-  @tailrec private def released(σ: Frames[?, ?, ?]): Unit = σ match
-    case f: Frames.Finally[r, x, v] =>
-      f.release()
-      released(f.rest)
-    case b: Frames.Bind[r, x, y, v] => released(b.rest)
-    case m: Frames.Map[r, x, y, v] => released(m.rest)
-    case _: Frames.End[r, v] => ()
-
-  /** the levels crossed released, innermost first: each level's frames outside it */
-  private def released(crossed: Crossed[?, ?, ?, ?]): Unit = crossed match
-    case _: Crossed.Nothing[r, v] => ()
-    case h: Crossed.Handled[ri, vi, e, r, rest, a, b, w] =>
-      released(h.inner)
-      released(h.outside)
-    case r: Crossed.Renamed[ri, vi, r1, r2, a, w] =>
-      released(r.inner)
-      released(r.outside)
+      State[R0, X, V0, Z](Prog.Value(s.answer[X](op, s.cell)), inner, Crossed.put(crossed, l))
 
   def run[A](p: Prog[Pure, A]): A = steps[Pure, A, A, A](p, Frames.End(), Levels.Top(Escape.pure))
 
