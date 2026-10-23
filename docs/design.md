@@ -1,0 +1,96 @@
+# Design
+
+Why okay-scala is built as it is. It is okay-simple's interface written again for Scala 3 alone, and one machine for
+it: what Scala 2 made okay-simple give up is taken back, and nothing is kept that one implementation does not need.
+
+## The same rows
+
+A row is a type constructor: an effect (`Choose`, `State % Int`), `Pure`, or `R + E`, which is `[X] =>> Sum[R, E, X]`.
+`Sum` and `Void` (`Pure`) are okay-simple's classes, imported, not copied: a row is a type, and two classes of one name
+would be two types. So the rows are the same on both sides, and okay-simple's interface runs on this machine
+(`okay.effects.cek.OnCek`) with its programs as they are — its whole suite passes there.
+
+What is not shared is what Scala 2 forced on okay-simple: one interface for two compilers (rows by `#L` projections in
+shared source), abstract evidence an implementation fills in, handlers as traits of clauses. Here the evidence is
+concrete, the handlers are an enum, a clause a polymorphic function.
+
+## Places: the evidence is a typed path
+
+`E` in `R` is its place, a path typed by the row:
+
+```scala
+enum Place[E[_], R[_], Rest[_]]:
+  case Only[E[_]]() extends Place[E, E, Pure]
+  case Last[R[_], E[_]]() extends Place[E, R + E, R]
+  case Init[E[_], R[_], G[_], Rest[_]](at: Place[E, R, Rest]) extends Place[E, R + G, Rest + G]
+  case Absurd[R[_]]() extends Place[Void, R, R]
+```
+
+found by given search, `only`, then `last`, then `init` — priorities by inheritance, so an effect twice in a row is found
+at its last place, nearest the program, and an unknown row is taken to be one effect. An operation carries its place;
+a handler its own. `Taken(mine, at)` compares two places of one row and answers `Mine` — whose type says the operation's
+effect IS the handler's — or `Theirs`, its place outside. That is how the machine gives a handler its operation with no
+cast: the GADT match proves it. The matches are `@unchecked` only because the checker cannot rule out an effect that is
+itself a row; none is.
+
+`Absurd` is the empty effect's place, in every row: where `Pure`'s places go when a program of no effect is put into a
+row. No operation is ever there; one that were would be of `Void`, which has no value — `op.absurd`.
+
+## The machine: CEK with generalised continuations
+
+The CEK machine (Felleisen and Friedman, 1986) runs a program by a loop over a state ⟨C, E, K⟩: the control, the
+environment, the continuation. For effect handlers Hillerström, Lindley and Atkey ("Effect handlers via generalised
+continuations", JFP 2020) split K in two: σ, the pure frames up to the nearest handler, and κ, the handlers, each with
+the frames outside it. Here:
+
+| | |
+|---|---|
+| C | `Prog[R, X]`: the program, at the row `R` |
+| E | Scala's closures: a bind's function carries what it needs |
+| σ | `Frames[R, X, V]`: binds and maps, from `X` to the value `V` of the nearest handler's body |
+| κ | `Levels[R, V, Z]`: each handler with its place and the frames outside it; renamings of places (`into`, `split`, `intercept`) |
+| `k` | `Crossed` and σ: the levels an operation went out through, data, put back by `Resume` |
+
+Everything is indexed by the row its program is at, so each step's types line up and the loop needs no cast. The loop is
+`@tailrec`: no run takes stack. Its hot cases — a value into a bind, a bind, an operation answered in place, a `k`
+resumed — are in the loop, kept small; entering or leaving a handler is `cold`'s.
+
+Multi-shot needs no copying: σ and κ are immutable data, so resuming `k` twice puts the same data back twice. The one
+mutable thing, a stateful handler's cell, is given afresh — from the state it has then — each time its handler is
+installed or put back by a `k`: so a state inside a choice is each branch's, one outside it threads through them.
+
+## Handlers: four shapes, polymorphic clauses
+
+```scala
+enum Handler[E[_], R[_], A, B]:
+  case General(ret: A => B ! R, op: [X] => (E[X], X => B ! R) => B ! R)
+  case Tail(ret: A => B ! R, answer: [X] => E[X] => X)
+  case Abort(ret: A => B ! R, abort: [X] => E[X] => B ! R)
+  case Stateful[...](cell, ret: (S, A) => B ! R, answer: [X] => (E[X], Cell[S]) => X)
+```
+
+A clause is a polymorphic function, `[X] => (op: State[S, X]) => op match ...`, and its match learns `X` from each case.
+The shape tells the machine what it may skip: a `Tail` or `Stateful` operation is answered where it is, no `k` made, the
+answer straight into the next frame; an `Abort` drops the rest with no `k`; only a `General` handler makes one.
+
+## Inline, and the one macro
+
+`inline` is where it cannot change what a program means: the machine's own helpers, and `perform`, whose `Performing`
+is an opaque `Unit` — nothing at run time. The words users write inside a handler's clause are plain methods. When Scala
+inlines a method, it binds the arguments to proxies typed outside the clause's GADT match, so `k` — an `X => P`, `X`
+known to be `Unit` in that case — no longer fits a `flatMap` that wants a `Unit => P`. The JIT inlines those small
+methods anyway.
+
+One macro, `Messages.notIn`: the error of a missing effect. `In` and `Split` are opaque types over `Place`, each with a
+fallback given, below the one that finds a place; it runs only when no place is found, at the top of the search, and
+says the effect and the row as they are written — `State % Int`, `Reader % String + State % Int` — where Scala would
+print the type lambdas they are, or, under a context bound, nothing at all.
+
+## What the tests found
+
+| | Found by | Fixed |
+|---|---|---|
+| `inline` words broke a clause's GADT match: `k` no longer fit `flatMap` | `Yield.foreach`, an interceptor | the words plain methods |
+| `perform(Get[S]())` inferred a strange effect: `S` twice in `State[S, S]` | the standard effects | `perform[State % S](op)`: the effect said |
+| under a context bound the not-found message said `E` and `R` | the compile-error test | opaque `In` and `Split`, a macro's message |
+| `last` and `init` were ambiguous for an effect twice in a row | the prototype | priorities by inheritance |
