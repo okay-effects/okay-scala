@@ -3,20 +3,40 @@
 Why okay-scala is built as it is. It is okay-simple's interface written again for Scala 3 alone, and one machine for
 it: what Scala 2 made okay-simple give up is taken back, and nothing is kept that one implementation does not need.
 
-## The rows, and who depends on whom
+## The rows, and no shared class
 
-A row is a type constructor: an effect (`Choose`, `State % Int`), `Pure`, or `R + E`, which is `[X] =>> Sum[R, E, X]`.
-A row is a type, and two classes of one name would be two types: for okay-simple's rows and these to be one, one side
-must take the other's classes. This library depends on nothing, so okay-simple takes them: its Scala 3 build's `Sum`,
-`Void` and `Cell` are aliases of these (its Scala 2 build keeps its own). So its interface runs on this machine
-(`okay.effects.cek.OnCek`, its module `okay-effects-cek`) with its programs as they are — its whole suite passes there.
+A row is a type constructor: an effect (`Choose`, `State % Int`), `Pure`, or `R + E`, which is `[X] =>> Sum[R, E, X]`,
+written as okay-simple writes it. The classes — `Sum`, `Void`, `Cell` — are this library's own, and okay-simple keeps
+its own: the two depend on nothing of each other. What lets okay-simple's interface run on this machine anyway is that
+the machine does not ask for its own places: it asks for an `At`.
 
-The library is built by Scala 3.3 LTS: a compiler reads the TASTy of its own version and older, and okay-simple, a
-library itself, is on 3.3 for every Scala 3 since to read it. Its tests run on 3.3 and on 3.9.
+`Sum` itself cannot be abstracted: the machine's proof that an operation is its handler's needs `R + E = R2 + E2` to
+give `E = E2`, and Scala derives that only for a class, which is injective — of an abstract type it derives nothing.
+So each library proves it for its own rows, with its own class, and the machine takes the proof as `Taken.Mine`.
 
-What is not shared is what Scala 2 forced on okay-simple: one interface for two compilers (rows by `#L` projections in
-shared source), abstract evidence an implementation fills in, handlers as traits of clauses. Here the evidence is
-concrete, the handlers are an enum, a clause a polymorphic function.
+The library is built by Scala 3.3 LTS: a compiler reads the TASTy of its own version and older, so any Scala 3 from
+3.3 on — okay-simple's adapter among them — can use it. Its tests run on 3.3 and on 3.9.
+
+## Places of any representation: `At` and `Escape`
+
+```scala
+trait At[E[_], R[_], Rest[_]]:
+  def take[E2[_]](at: At[E2, R, ?]): Taken[E, E2, Rest]
+
+trait Escape[P[_]]:
+  def apply[E[_], X](at: At[E, P, ?], op: E[X]): Nothing
+```
+
+A place of `E` in `R` is whatever compares itself with another place of the same row: `take` answers `Mine`, whose type
+says the operation's effect is the handler's, or `Theirs`, its place outside. This library's places, `Place`, are one
+`At`, and the machine compares two of them at once on its hot path — the last place against the last, nearly every
+operation — so its own programs pay nothing for the abstraction. Another representation compares its own: okay-simple's
+adapter wraps okay-simple's places and calls okay-simple's `take`, whose `Mine` it turns into the machine's, the equality
+proved where okay-simple's own types show it.
+
+`Escape` is the top of a run: a run's row has no effect, so no operation gets past every handler, and its places say
+why — here, an operation at `Pure`'s place is of `Void`, which has no value. `Cek.run(p)` runs this library's programs;
+`Cek.run(p, escape)` another representation's.
 
 ## Places: the evidence is a typed path
 

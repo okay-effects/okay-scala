@@ -2,8 +2,8 @@
 
 Algebraic effects and handlers for **Scala 3 alone**: the rows `A ! R`, `R + E`, `F % S`, with nothing given up for
 Scala 2, and one reference implementation, a CEK machine. Effects are enums, handlers match them, and nothing is cast.
-It depends on nothing; [okay-simple](https://github.com/okay-effects/okay-simple) depends on it — its Scala 3 rows are
-this library's, and its interface runs on this machine.
+It depends on nothing, and nothing of it is shared: [okay-simple](https://github.com/okay-effects/okay-simple)'s
+adapter runs okay-simple's interface on this machine, okay-simple's rows and places as they are.
 
 ```scala
 import okay.scala3.*
@@ -42,10 +42,11 @@ the effect State % Int is not in the row Reader % String
 | `Split[E, R, Rest]` | `E` in `R`, and `R` without it `Rest`: what a handler takes |
 | `Sub[R, S]` | every effect of `R` is in `S`: a program put into a bigger row, `p.into[S]` |
 
-`Sum`, `Void` and `Cell` are this library's; okay-simple's Scala 3 build takes them from here (its Scala 2 build keeps its
-own), so `Int ! Reader % String + State % Int` is the same type in both. okay-simple's module `okay-effects-cek` is its
-interface, `okay.effects.Runner`, on this machine — `okay.effects.cek.OnCek` — and okay-simple's own suite of its
-interface passes on it: its 30 tests, multi-shot, delimited control, generators, interception and all.
+The rows are written as okay-simple writes them, so a program written against okay-simple's interface reads the same
+here; the classes are each library's own. The machine takes places of any representation (`At`): okay-simple's
+module `okay-effects-cek` is an adapter giving it okay-simple's own places, and with it okay-simple's interface,
+`okay.effects.Runner`, runs on this machine — `okay.effects.cek.OnCek` — okay-simple's whole suite of its interface
+passing: its 30 tests, multi-shot, delimited control, generators, interception and all.
 
 ## Effects, words, handlers
 
