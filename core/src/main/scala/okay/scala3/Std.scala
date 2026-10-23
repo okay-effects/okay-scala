@@ -31,7 +31,7 @@ object Reader:
   def ask[E, R[_]](using In[Reader % E, R]): E ! R = perform[Reader % E](Ask())
 
   def run[E, R[_], Rest[_], A](env: E)(p: A ! R)(using Split[Reader % E, R, Rest]): A ! Rest =
-    handle(p, Handler.Tail[Reader % E, Rest, A, A](pure, [X] => (op: Reader[E, X]) => op match
+    handle(p, Handler.tail[Reader % E, Rest, A, A](pure)([X] => (op: Reader[E, X]) => op match
       case Ask() => env))
 
 /** an output of type `W`, written */
@@ -56,7 +56,7 @@ object Fail:
 
   /** the value, or the error raised */
   def run[E, R[_], Rest[_], A](p: A ! R)(using Split[Fail % E, R, Rest]): Either[E, A] ! Rest =
-    handle(p, Handler.Abort[Fail % E, Rest, A, Either[E, A]](a => pure(Right(a)), [X] => (op: Fail[E, X]) => op match
+    handle(p, Handler.abort[Fail % E, Rest, A, Either[E, A]](a => pure(Right(a)))([X] => (op: Fail[E, X]) => op match
       case Raise(e) => pure(Left(e))))
 
 /** a choice among values: its handler resumes the rest once for each — MULTI-SHOT */
@@ -71,7 +71,7 @@ object Choose:
 
   /** every value of every way the choices can go, in order */
   def all[R[_], Rest[_], A](p: A ! R)(using Split[Choose, R, Rest]): List[A] ! Rest =
-    handle(p, Handler.General[Choose, Rest, A, List[A]](a => pure(List(a)), [X] => (op: Choose[X], k: X => List[A] ! Rest) =>
+    handle(p, Handler.general[Choose, Rest, A, List[A]](a => pure(List(a)))([X] => (op: Choose[X], k: X => List[A] ! Rest) =>
       op match
         case Among(xs) => collect(xs, k, Nil)))
 
@@ -95,5 +95,5 @@ object Yield:
 
   /** each value given to `f`, a program of the row outside: the generator paused while it runs */
   def foreach[O, R[_], Rest[_], A](p: A ! R)(using Split[Yield % O, R, Rest])(f: O => Unit ! Rest): A ! Rest =
-    handle(p, Handler.General[Yield % O, Rest, A, A](pure, [X] => (op: Yield[O, X], k: X => A ! Rest) => op match
+    handle(p, Handler.general[Yield % O, Rest, A, A](pure)([X] => (op: Yield[O, X], k: X => A ! Rest) => op match
       case Emit(o) => f(o).flatMap(k)))

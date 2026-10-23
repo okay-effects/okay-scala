@@ -89,7 +89,7 @@ class CoreSuite extends munit.FunSuite:
   test("intercepted: each operation observed, changed or refused, then passed on to its handler outside") {
     type Counting[X] = (Writer % String + State % Int)[X]
     def logged[A](p: A ! Counting): A ! Counting =
-      okay.scala3.intercept(p, Handler.General[State % Int, Counting, A, A](pure, [X] => (op: State[Int, X], k: X => A ! Counting) =>
+      okay.scala3.intercept(p, Handler.general[State % Int, Counting, A, A](pure)([X] => (op: State[Int, X], k: X => A ! Counting) =>
         op match
           case State.Get() => Writer.tell[String, Counting]("get").andThen(State.get[Int, Counting]).flatMap(k)
           case State.Put(n) => Writer.tell[String, Counting](s"put $n").andThen(State.put[Int, Counting](n * 2)).flatMap(k)))
@@ -148,4 +148,25 @@ class CoreSuite extends munit.FunSuite:
     assert(error.contains("the effect State % Int is not in the row Reader % String"), error)
     val twice = compileErrors("State.run(0)(Programs.greet[Reader % String + State % Int])")
     assert(twice.contains("the effect Writer % String is not in the row Reader % String + State % Int"), twice)
+  }
+
+  test("a handler of each shape made by Handler's methods") {
+    enum Ask[X]:
+      case Name() extends Ask[String]
+    def name[R[_]: Has[Ask]]: String ! R = perform[Ask](Ask.Name())
+    val tail = Handler.tail[Ask, Pure, String, String](pure)([X] => (op: Ask[X]) => op match
+      case Ask.Name() => "Ann")
+    val general = Handler.general[Ask, Pure, String, List[String]](a => pure(List(a)))(
+      [X] => (op: Ask[X], k: X => List[String] ! Pure) => op match
+        case Ask.Name() => k("Ann").flatMap(a => k("Bob").map(a ++ _)))
+    val abort = Handler.abort[Ask, Pure, String, String](pure)([X] => (op: Ask[X]) => op match
+      case Ask.Name() => pure("nobody"))
+    val stateful = Handler.stateful[Ask, Pure, String, (Int, String), Int](0)((n, a) => pure((n, a)))(
+      [X] => (op: Ask[X], cell: Cell[Int]) => op match
+        case Ask.Name() => cell.set(cell.get + 1); s"guest ${cell.get}")
+    val twice = name[Ask].flatMap(a => name[Ask].map(b => s"$a, $b"))
+    assertEquals(run(handle(twice, tail)), "Ann, Ann")
+    assertEquals(run(handle(twice, general)), List("Ann, Ann", "Ann, Bob", "Bob, Ann", "Bob, Bob"))
+    assertEquals(run(handle(twice, abort)), "nobody")
+    assertEquals(run(handle(twice, stateful)), (2, "guest 1, guest 2"))
   }

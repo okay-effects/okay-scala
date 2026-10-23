@@ -67,10 +67,12 @@ answer's type from the case:
 
 | | |
 |---|---|
-| `Handler.General(ret, op)` | `op` gets the operation and `k`, the rest: resumed once, many times (multi-shot), or never |
-| `Handler.Tail(ret, answer)` | answered in place: the body goes on at once, no `k` made |
-| `Handler.Abort(ret, abort)` | the rest dropped: the clause is the result, no `k` made |
+| `Handler.general(ret)(op)` | `op` gets the operation and `k`, the rest: resumed once, many times (multi-shot), or never |
+| `Handler.tail(ret)(answer)` | answered in place: the body goes on at once, no `k` made |
+| `Handler.abort(ret)(abort)` | the rest dropped: the clause is the result, no `k` made |
 | `Handler.stateful(init)(ret)(answer)` | answered in place with a state of its own, in a cell |
+
+Each method gives a `Handler`; the cases themselves (`Handler.General(ret, op)`, ...) are constructors too.
 
 ```scala
 def run[S, R[_], Rest[_], A](init: S)(p: A ! R)(using Split[State % S, R, Rest]): (S, A) ! Rest =

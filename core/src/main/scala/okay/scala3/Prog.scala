@@ -38,9 +38,10 @@ enum Prog[R[_], +A]:
  * machine runs each its own way. Each clause takes an operation `E[X]` as it is, and its match learns `X` from the
  * case — `case Get() => s` answers an `S`:
  * {{{
- * Handler.Tail(pure, [X] => (op: Reader[String, X]) => op match
+ * Handler.tail[Reader % String, R, A, A](pure)([X] => (op: Reader[String, X]) => op match
  *   case Reader.Ask() => "Ann")
  * }}}
+ * Made by `Handler.general`, `tail`, `abort`, `stateful`, or by the cases themselves.
  */
 enum Handler[E[_], R[_], A, B]:
   /** `k` the rest of the body, under this handler: resumed any number of times, or none */
@@ -54,7 +55,19 @@ enum Handler[E[_], R[_], A, B]:
   case Stateful[E[_], R[_], A, B, S](cell: Cell[S], ret: (S, A) => B ! R,
     answer: [X] => (E[X], Cell[S]) => X) extends Handler[E, R, A, B]
 
+/** a handler of each shape, its value's clause first, its operations' after: `Handler.tail[Reader % String, R, A,
+ * A](pure)([X] => (op: Reader[String, X]) => op match ...)`. Each gives a `Handler`, whatever its shape */
 object Handler:
+  /** `op` gets the operation and `k`, the rest of the body under this handler: resumed once, many times, or never */
+  def general[E[_], R[_], A, B](ret: A => B ! R)(op: [X] => (E[X], X => B ! R) => B ! R): Handler[E, R, A, B] =
+    General(ret, op)
+
+  /** each operation answered in place: the body goes on at once with `answer`'s value, no `k` made */
+  def tail[E[_], R[_], A, B](ret: A => B ! R)(answer: [X] => E[X] => X): Handler[E, R, A, B] = Tail(ret, answer)
+
+  /** each operation aborts: `abort`'s program is the handler's result, the rest dropped, no `k` made */
+  def abort[E[_], R[_], A, B](ret: A => B ! R)(abort: [X] => E[X] => B ! R): Handler[E, R, A, B] = Abort(ret, abort)
+
   /** a stateful handler from the state `init` */
   def stateful[E[_], R[_], A, B, S](init: S)(ret: (S, A) => B ! R)(answer: [X] => (E[X], Cell[S]) => X)
     : Handler[E, R, A, B] = Stateful(Cell(init), ret, answer)
