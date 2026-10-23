@@ -29,8 +29,10 @@ trait Escape[P[_]]:
 
 A place of `E` in `R` is whatever compares itself with another place of the same row: `take` answers `Mine`, whose type
 says the operation's effect is the handler's, or `Theirs`, its place outside. This library's places, `Place`, are one
-`At`, and the machine compares two of them at once on its hot path — the last place against the last, nearly every
-operation — so its own programs pay nothing for the abstraction. Another representation compares its own: okay-simple's
+`At`, and the machine compares the commonest of them at once on its hot path — the last place against the last, a row
+of one against itself — in a method kept small for the JIT to inline; anything else goes to a loop of its own
+(`inPlaceTaken`, `outTaken`) and stays there. Measured against the machine before `At`, its own programs allocate the
+same bytes per run and run in the same time, within the noise. Another representation compares its own: okay-simple's
 adapter wraps okay-simple's places and calls okay-simple's `take`, whose `Mine` it turns into the machine's, the equality
 proved where okay-simple's own types show it.
 
@@ -119,3 +121,4 @@ print the type lambdas they are, or, under a context bound, nothing at all.
 | under a context bound the not-found message said `E` and `R` | the compile-error test | opaque `In` and `Split`, a macro's message |
 | `last` and `init` were ambiguous for an effect twice in a row | the prototype | priorities by inheritance |
 | on Scala.js, a program of ten thousand handlers, built eagerly, overflowed the stack while it was built | the test of depth | the program built as the run gets to it, `defer` |
+| `At` made the machine's own programs 8–25% slower: the place comparison grew too big to be inlined | an A/B of the commit before against the commit after | the commonest places compared in a small method, the rest in loops of their own |

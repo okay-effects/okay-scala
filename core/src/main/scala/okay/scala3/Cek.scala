@@ -67,26 +67,36 @@ object Cek:
     case h: Crossed.Handled[ri, vi, e, r, rest, a, b, w] => put(h.inner, Levels.Handled(h.at, fresh(h.h), h.outside, κ))
     case r: Crossed.Renamed[ri, vi, r1, r2, a, w] => put(r.inner, Levels.Renamed(r.rename, r.outside, κ))
 
-  /** the handler of the operation at `at`, if it answers in place; `null` if it does not, or there is none */
+  /** the handler of the operation at `at`, if it answers in place; `null` if it does not, or there is none. Small,
+   * for the JIT to inline: the commonest places compared here, anything else by `inPlaceTaken` */
   @tailrec private def inPlace[E[_], R[_], V, Z](at: At[E, R, ?], κ: Levels[R, V, Z]): Handler[E, ?, ?, ?] | Null =
     κ match
-      // a handler at the last place, nearly every one: the two places compared here, nothing made
       case l: Levels.Handled[e, r, rest, a, b, w, z] => (l.at: @unchecked) match
           case _: Place.Last[r1, e1] => (at: @unchecked) match
               case _: Place.Last[r2, e2] => l.h
               case i: Place.Init[e2, r2, g, rest2] => inPlace[E, rest, w, Z](i.at, l.up)
-              case _: Place.Absurd[r2] => null
-              case _ => taken(l, at)
-          case _ => taken(l, at)
+              case _ => inPlaceTaken(at, κ)
+          case _: Place.Only[e1] => (at: @unchecked) match
+              case _: Place.Only[e2] => l.h
+              case _ => inPlaceTaken(at, κ)
+          case _ => inPlaceTaken(at, κ)
       case r: Levels.Renamed[r1, r2, a, w, z] => inPlace[E, r2, w, Z](r.rename(at), r.up)
       case _: Levels.Top[p, z] => null
 
-  /** the operation at `at`, in place: the handler `l`'s, or the levels outside it asked */
-  private def taken[E[_], R[_], Rest[_], A, B, W, Z](l: Levels.Handled[?, R, Rest, A, B, W, Z], at: At[E, R, ?])
-    : Handler[E, ?, ?, ?] | Null = l match
-    case l: Levels.Handled[e, r, rest, a, b, w, z] => l.at.take(at) match
-        case _: Taken.Mine[e2, r2] => l.h
-        case t: Taken.Theirs[e2, e3, r2] => inPlace[E, rest, w, Z](t.at, l.up)
+  /** the same, each place compared by `take`: this library's statically, another representation's by its own */
+  @tailrec private def inPlaceTaken[E[_], R[_], V, Z](at: At[E, R, ?], κ: Levels[R, V, Z]): Handler[E, ?, ?, ?] | Null =
+    κ match
+      case l: Levels.Handled[e, r, rest, a, b, w, z] => taken(l.at, at) match
+          case _: Taken.Mine[e2, r2] => l.h
+          case t: Taken.Theirs[e2, e3, r2] => inPlaceTaken[E, rest, w, Z](t.at, l.up)
+      case r: Levels.Renamed[r1, r2, a, w, z] => inPlaceTaken[E, r2, w, Z](r.rename(at), r.up)
+      case _: Levels.Top[p, z] => null
+
+  /** an operation's place `at` met by a handler's place `mine` */
+  private def taken[E[_], E2[_], R[_], Rest[_]](mine: At[E, R, Rest], at: At[E2, R, ?]): Taken[E, E2, Rest] =
+    mine match
+      case place: Place[E, R, Rest] @unchecked => Taken(place, at)
+      case _ => mine.take(at)
 
   /** the loop: the hot steps here, small; a handler entered or left, an operation going out, in `cold` */
   @tailrec private def loop[R[_], X, V, Z](c: Prog[R, X], σ: Frames[R, X, V], κ: Levels[R, V, Z]): Z = c match
@@ -148,21 +158,28 @@ object Cek:
   /** an operation going out to its handler: the levels it crosses taken into `crossed` */
   @tailrec private def out[E[_], R0[_], X, V0, R[_], V, Z](at: At[E, R, ?], op: E[X], inner: Frames[R0, X, V0],
     crossed: Crossed[R0, V0, R, V], κ: Levels[R, V, Z]): State[?, ?, ?, Z] = κ match
-    case l: Levels.Handled[e, r, rest, a, b, w, z] =>
-      // the last place against the last, nearly every one, compared here; any other, by `take`
-      val t: Taken[e, E, rest] = (l.at: @unchecked) match
+    case l: Levels.Handled[e, r, rest, a, b, w, z] => (l.at: @unchecked) match
+        // a handler at the last place, nearly every one: the two places compared here, nothing made
         case _: Place.Last[r1, e1] => (at: @unchecked) match
-            case _: Place.Last[r2, e2] => Taken.Mine[e, rest]()
-            case i: Place.Init[e2, r2, g, rest2] => Taken.Theirs(i.at)
-            case _ => l.at.take(at)
-        case _ => l.at.take(at)
-      t match
-        case _: Taken.Mine[e2, r2] => here[E, R0, X, V0, R, rest, a, b, w, Z](l, op, inner, crossed)
-        case t: Taken.Theirs[e2, e3, r2] =>
-          out[E, R0, X, V0, rest, w, Z](t.at, op, inner, Crossed.Handled(crossed, l.at, l.h, l.outside), l.up)
+            case _: Place.Last[r2, e2] => here[E, R0, X, V0, R, rest, a, b, w, Z](l, op, inner, crossed)
+            case i: Place.Init[e2, r2, g, rest2] =>
+              out[E, R0, X, V0, rest, w, Z](i.at, op, inner, Crossed.Handled(crossed, l.at, l.h, l.outside), l.up)
+            case _ => outTaken(at, op, inner, crossed, κ)
+        case _ => outTaken(at, op, inner, crossed, κ)
     case r: Levels.Renamed[r1, r2, a, w, z] =>
       out[E, R0, X, V0, r2, w, Z](r.rename(at), op, inner, Crossed.Renamed(crossed, r.rename, r.outside), r.up)
     // past every handler: the run's row has no effect, so no operation gets here — its places say why
+    case top: Levels.Top[p, z] => top.escape(at, op)
+
+  /** the same, each place compared by `take`, in a loop of its own: once off the commonest places, it stays here */
+  @tailrec private def outTaken[E[_], R0[_], X, V0, R[_], V, Z](at: At[E, R, ?], op: E[X], inner: Frames[R0, X, V0],
+    crossed: Crossed[R0, V0, R, V], κ: Levels[R, V, Z]): State[?, ?, ?, Z] = κ match
+    case l: Levels.Handled[e, r, rest, a, b, w, z] => taken(l.at, at) match
+        case _: Taken.Mine[e2, r2] => here[E, R0, X, V0, R, rest, a, b, w, Z](l, op, inner, crossed)
+        case t: Taken.Theirs[e2, e3, r2] =>
+          outTaken[E, R0, X, V0, rest, w, Z](t.at, op, inner, Crossed.Handled(crossed, l.at, l.h, l.outside), l.up)
+    case r: Levels.Renamed[r1, r2, a, w, z] =>
+      outTaken[E, R0, X, V0, r2, w, Z](r.rename(at), op, inner, Crossed.Renamed(crossed, r.rename, r.outside), r.up)
     case top: Levels.Top[p, z] => top.escape(at, op)
 
   /** an operation at its own handler `l`: the clause run outside it, with `k`; or no `k`, aborting; or answered in
