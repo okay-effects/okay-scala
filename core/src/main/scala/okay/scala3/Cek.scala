@@ -19,7 +19,7 @@ enum Levels[R[_], V, Z]:
  * THE CEK MACHINE (Felleisen and Friedman), with the generalised continuations of Hillerström, Lindley and Atkey
  * ("Effect handlers via generalised continuations", 2020): its state is ⟨C, E, K⟩ — C the program to run, E its
  * environment (Scala's closures carry it), K the continuation, split in two: σ, the frames up to the nearest handler,
- * and κ, the handlers with the frames outside each. A step is one case of `loop`, a `@tailrec` loop: so a run takes
+ * and κ, the handlers with the frames outside each. A step is one case of `steps`, a `@tailrec` loop: so a run takes
  * no stack, however deep its binds, its handlers, its resumptions.
  *
  * An operation goes out through κ to its handler, its place matched against each handler's: `Taken` says, by the
@@ -79,44 +79,44 @@ object Cek:
       case r: Levels.Renamed[r1, r2, a, w, z] => inPlaceTaken[E, r2, w, Z](r.rename(at), r.up)
       case _: Levels.Top[p, z] => null
 
-  /** the loop: the hot steps here, small; a handler entered or left (`enter`, `leave`), an operation going out to a
+  /** the machine's steps, one per case: the hot ones here, small; a handler entered or left (`enter`, `leave`), an operation going out to a
    * general handler (`out`), each a method of its own */
-  @tailrec private def loop[R[_], X, V, Z](c: Prog[R, X], σ: Frames[R, X, V], κ: Levels[R, V, Z]): Z = c match
+  @tailrec private def steps[R[_], X, V, Z](c: Prog[R, X], σ: Frames[R, X, V], κ: Levels[R, V, Z]): Z = c match
     case v: Prog.Value[r, x] => σ match
-        case b: Frames.Bind[r2, a, y, v2] => loop[R, y, V, Z](b.f(v.a), b.rest, κ)
-        case m: Frames.Map[r2, a, y, v2] => loop[R, y, V, Z](Prog.Value(m.f(v.a)), m.rest, κ)
+        case b: Frames.Bind[r2, a, y, v2] => steps[R, y, V, Z](b.f(v.a), b.rest, κ)
+        case m: Frames.Map[r2, a, y, v2] => steps[R, y, V, Z](Prog.Value(m.f(v.a)), m.rest, κ)
         case _: Frames.End[r2, v2] => κ match
             case _: Levels.Top[p, z] => v.a
             case _ =>
               val s = leave(v.a, κ)
-              loop(s.c, s.σ, s.κ)
-    case b: Prog.FlatMap[r, y, x] => loop[R, y, V, Z](b.p, Frames.Bind[R, y, x, V](b.f, σ), κ)
-    case m: Prog.Map[r, y, x] => loop[R, y, V, Z](m.p, Frames.Map[R, y, x, V](m.f, σ), κ)
+              steps(s.c, s.σ, s.κ)
+    case b: Prog.FlatMap[r, y, x] => steps[R, y, V, Z](b.p, Frames.Bind[R, y, x, V](b.f, σ), κ)
+    case m: Prog.Map[r, y, x] => steps[R, y, V, Z](m.p, Frames.Map[R, y, x, V](m.f, σ), κ)
     case p: Prog.Perform[r, e, x] => inPlace[e, R, V, Z](p.at, κ) match
         // answered in place, the answer straight into the next frame
         case t: Handler.Tail[e2, t2, a2, b2] =>
           val x = t.answer[x](p.op)
           σ match
-            case b: Frames.Bind[r2, a3, y, w] => loop[R, y, V, Z](b.f(x), b.rest, κ)
-            case _ => loop[R, X, V, Z](Prog.Value(x), σ, κ)
+            case b: Frames.Bind[r2, a3, y, w] => steps[R, y, V, Z](b.f(x), b.rest, κ)
+            case _ => steps[R, X, V, Z](Prog.Value(x), σ, κ)
         case s: Handler.Stateful[e2, t2, a2, b2, st] =>
           val x = s.answer[x](p.op, s.cell)
           σ match
-            case b: Frames.Bind[r2, a3, y, w] => loop[R, y, V, Z](b.f(x), b.rest, κ)
-            case _ => loop[R, X, V, Z](Prog.Value(x), σ, κ)
+            case b: Frames.Bind[r2, a3, y, w] => steps[R, y, V, Z](b.f(x), b.rest, κ)
+            case _ => steps[R, X, V, Z](Prog.Value(x), σ, κ)
         case _ =>
           val s = out[e, R, x, V, R, V, Z](p.at, p.op, σ, Crossed.Nothing[R, V](), κ)
-          loop(s.c, s.σ, s.κ)
-    case d: Prog.Defer[r, x] => loop[R, X, V, Z](d.p(), σ, κ)
+          steps(s.c, s.σ, s.κ)
+    case d: Prog.Defer[r, x] => steps[R, X, V, Z](d.p(), σ, κ)
     // `k` resumed: the levels it took and its handler put back, the value straight into the frame inside
     case r: Prog.Resume[rest, x, b, r0, v0, e, rr, a] =>
       val κ2 = put(r.crossed, Levels.Handled[e, rr, R, a, b, V, Z](r.at, r.h, σ, κ))
       r.inner match
-        case f: Frames.Bind[r2, x2, y, v] => loop[r0, y, v0, Z](f.f(r.x), f.rest, κ2)
-        case _ => loop[r0, x, v0, Z](Prog.Value(r.x), r.inner, κ2)
+        case f: Frames.Bind[r2, x2, y, v] => steps[r0, y, v0, Z](f.f(r.x), f.rest, κ2)
+        case _ => steps[r0, x, v0, Z](Prog.Value(r.x), r.inner, κ2)
     case _ =>
       val s = enter(c, σ, κ)
-      loop(s.c, s.σ, s.κ)
+      steps(s.c, s.σ, s.κ)
 
   /** a handler's body ended with `a`, at its level: the handler's value clause, or a renaming left */
   private def leave[R[_], V, Z](a: V, κ: Levels[R, V, Z]): State[?, ?, ?, Z] = (κ: @unchecked) match
@@ -173,8 +173,8 @@ object Cek:
     case s: Handler.Stateful[e, t, a2, b, st] =>
       State[R0, X, V0, Z](Prog.Value(s.answer[X](op, s.cell)), inner, put(crossed, l))
 
-  def run[A](p: Prog[Pure, A]): A = loop[Pure, A, A, A](p, Frames.End(), Levels.Top(Escape.pure))
+  def run[A](p: Prog[Pure, A]): A = steps[Pure, A, A, A](p, Frames.End(), Levels.Top(Escape.pure))
 
   /** a program over `P`, a row of no effect of another representation, its places' `escape` refuting what gets past
    * every handler: how another library's rows run on this machine */
-  def run[P[_], A](p: Prog[P, A], escape: Escape[P]): A = loop[P, A, A, A](p, Frames.End(), Levels.Top(escape))
+  def run[P[_], A](p: Prog[P, A], escape: Escape[P]): A = steps[P, A, A, A](p, Frames.End(), Levels.Top(escape))

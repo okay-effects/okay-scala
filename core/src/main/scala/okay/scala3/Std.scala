@@ -75,10 +75,11 @@ object Choose:
       op match
         case Among(xs) => collect(xs, k, Nil)))
 
-  /** `k` resumed for each value in turn, the lists joined: a loop of the program, no stack */
-  private def collect[X, A, R[_]](xs: List[X], k: X => List[A] ! R, done: List[A]): List[A] ! R = xs match
-    case Nil => pure(done)
-    case x :: rest => k(x).flatMap(as => collect(rest, k, done ++ as))
+  /** `k` resumed for each value in turn, the lists joined — kept reversed as they come, each value's once, so the
+   * joining is linear — a loop of the program, no stack */
+  private def collect[X, A, R[_]](xs: List[X], k: X => List[A] ! R, reversed: List[A]): List[A] ! R = xs match
+    case Nil => pure(reversed.reverse)
+    case x :: rest => k(x).flatMap(as => collect(rest, k, as reverse_::: reversed))
 
 /** a generator's values, each given out: the program goes on when it is taken */
 enum Yield[O, X]:
