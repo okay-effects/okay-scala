@@ -3,10 +3,13 @@ package okay.scala3
 /** a program of the value `A` over the row `R`: `Int ! Reader % String + State % Int` */
 infix type ![+A, R[_]] = Prog[R, A]
 
-/** a stateful handler's state, read and written by its clause in place: a final class, nothing virtual */
-final class Cell[S](var state: S):
-  def get: S = state
-  def set(s: S): Unit = state = s
+/** a stateful handler's state, read and written by its clause in place: `get` and `set` final, nothing virtual on
+ * the way of an operation. `fresh` is the cell a handler is given when it is installed or put back by a `k` — a
+ * subclass may carry another library's view of a cell, and give its own kind again */
+class Cell[S](var state: S):
+  final def get: S = state
+  final def set(s: S): Unit = state = s
+  def fresh: Cell[S] = Cell(state)
 
 /**
  * A PROGRAM: data, run by the machine (`Cek`). Its own cases are the words below — `pure`, `flatMap`, `map`,
@@ -55,6 +58,9 @@ object Handler:
   /** a stateful handler from the state `init` */
   def stateful[E[_], R[_], A, B, S](init: S)(ret: (S, A) => B ! R)(answer: [X] => (E[X], Cell[S]) => X)
     : Handler[E, R, A, B] = Stateful(Cell(init), ret, answer)
+  /** the same from a cell of one's own kind, its `fresh` giving the same kind */
+  def stateful[E[_], R[_], A, B, S](cell: Cell[S])(ret: (S, A) => B ! R)(answer: [X] => (E[X], Cell[S]) => X)
+    : Handler[E, R, A, B] = Stateful(cell, ret, answer)
 
 // -- THE WORDS
 
