@@ -5,6 +5,8 @@ Scala 2, and one reference implementation, a CEK machine. Effects are enums, han
 It depends on nothing, and nothing of it is shared: [okay-simple](https://github.com/okay-effects/okay-simple)'s
 adapter runs okay-simple's interface on this machine, okay-simple's rows and places as they are.
 
+**Start here: [getting started](docs/getting-started.md)** — the library added, an effect, a program, a handler, run.
+
 ```scala
 import okay.scala3.*
 
