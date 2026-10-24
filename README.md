@@ -173,7 +173,7 @@ coreNative/test` on the other platforms, `sbt "bench/Jmh/run"` the benchmark. Ap
 
 ```scala-sbt
 resolvers += "okay-scala" at "https://okay-effects.github.io/okay-scala/maven"
-libraryDependencies += "io.github.okay-effects" %% "okay-scala" % "0.1.0"     // %%% on Scala.js, Scala Native
+libraryDependencies += "io.github.okay-effects" %% "okay-scala" % "0.1.1"     // %%% on Scala.js, Scala Native
 ```
 
 Releases are a Maven repository on GitHub Pages ([RELEASING.md](RELEASING.md)).

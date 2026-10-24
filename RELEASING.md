@@ -8,7 +8,7 @@ https://okay-effects.github.io/okay-scala/maven. No account and no token is need
 ```scala-sbt
 resolvers += "okay-scala" at "https://okay-effects.github.io/okay-scala/maven"
 
-libraryDependencies += "io.github.okay-effects" %% "okay-scala" % "0.1.0"
+libraryDependencies += "io.github.okay-effects" %% "okay-scala" % "0.1.1"
 ```
 
 `%%%` for Scala.js and Scala Native. The library is built on Scala 3.3 LTS, so any Scala 3 from 3.3 on can use it.

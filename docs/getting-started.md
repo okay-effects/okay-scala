@@ -8,7 +8,7 @@ Five steps: add the library, write an effect, a program that uses it, a handler,
 // build.sbt
 scalaVersion := "3.3.8"   // any Scala 3 from 3.3 on
 resolvers += "okay-scala" at "https://okay-effects.github.io/okay-scala/maven"
-libraryDependencies += "io.github.okay-effects" %% "okay-scala" % "0.1.0"   // %%% for Scala.js and Scala Native
+libraryDependencies += "io.github.okay-effects" %% "okay-scala" % "0.1.1"   // %%% for Scala.js and Scala Native
 ```
 
 Two imports: the library, and its standard effects:
