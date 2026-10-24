@@ -35,6 +35,7 @@ object Messages:
               if nested then s"($sum)" else sum
             case (_, List(s, _)) if parameter.isDefined =>
               s"${f.typeSymbol.name} % ${s.show(using Printer.TypeReprShortCode)}"
+            case ("okay.scala3.Void", List(_)) if parameter.isDefined => "Pure"
             case (_, List(_)) if parameter.isDefined => f.typeSymbol.name
             case _ => t.show(using Printer.TypeReprShortCode)
         case _ => t.show(using Printer.TypeReprShortCode)
