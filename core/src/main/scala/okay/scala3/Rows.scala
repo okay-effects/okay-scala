@@ -49,7 +49,7 @@ object Split extends SplitMissing:
   extension [E[_], R[_], Rest[_]](s: Split[E, R, Rest]) def place: Place[E, R, Rest] = s
 
 trait SplitMissing:
-  inline given missing[E[_], R[_], Rest[_]]: Split[E, R, Rest] = ${ Messages.notIn[E, R] }
+  inline given missing[E[_], R[_], Rest[_]]: Split[E, R, Rest] = ${ Messages.notSplit[E, R, Rest] }
 
 /** a context bound: `def tick[R[_]: Has[State % Int]]: Int ! R` */
 type Has[E[_]] = [R[_]] =>> In[E, R]

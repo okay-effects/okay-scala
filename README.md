@@ -115,6 +115,19 @@ The standard effects:
 | `Store.Of[K, V]` | `load`, `save`, `remove` | `Store.inMemory(map)` |
 | `Clock` | `now`, `sleep` | `Clock.virtual(start)`: time at once; `Clock.system` (JVM, Native) |
 | `Log` | `debug`, `info`, `warn`, `error` | `Log.collect(least)`, `Log.to(sink, least)` |
+| `Async` | `fromFuture`, `async`, `sleep`, `both`, `parTraverse`, `race`, `timeout` | `Async.toFuture`, `Async.start` |
+
+Asynchrony has no runtime of its own: a program of `Async` waits on callbacks — a future, a timer — and
+`Async.toFuture` drives it, its other effects handled first. On the JVM, Scala.js and Scala Native:
+
+```scala
+given ExecutionContext = Async.defaultContext
+
+def slow[A](ms: Long, a: A): A ! Async = Async.sleep[Async](ms).as(a)
+
+Async.toFuture(Async.both(slow(200, "a"), slow(200, "b")))     // ("a", "b"), in 200 ms, not 400
+Async.toFuture(Async.timeout(30)(slow(500, 1)))                 // None: the program cancelled
+```
 
 ## The machine
 

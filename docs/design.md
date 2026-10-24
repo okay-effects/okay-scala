@@ -14,6 +14,7 @@ it: what Scala 2 made okay-simple give up is taken back, and nothing is kept tha
 | `Cek.scala` | the machine's steps alone: `steps`, `enter`, `leave`, `out`, `here`, `inPlace`, `run` |
 | `Messages.scala` | the macro that says what effect a program lacks |
 | `Std`, `Choose`, `Services`, `Control`, `Lift` | the standard effects, each with its words and handlers |
+| `Async` (and `Timers` of each platform) | asynchrony: waits on callbacks, driven to a `Future` |
 
 ## The rows, and no shared class
 

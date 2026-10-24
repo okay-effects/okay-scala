@@ -90,5 +90,5 @@ result; put it inside, `Accounts.inMemory(...)(Fail.run(...))`, and the accounts
 ## Next
 
 - the standard effects — `State`, `Reader`, `Writer`, `Fail`, `Abort`, `Choose`, `Yield`, `Fresh`, `Random`,
-  `Store`, `Clock`, `Log`, `Control`, `Lift` — and interception: [the README](../README.md)
+  `Store`, `Clock`, `Log`, `Async`, `Control`, `Lift` — and interception: [the README](../README.md)
 - how it works, and the code file by file: [design](design.md)
