@@ -1,4 +1,6 @@
-package okay.scala3
+package okay.scala3.std
+
+import okay.scala3.*
 
 /*
  * THE STANDARD EFFECTS: each an enum of its operations, its words, its handler. A word finds its row from the

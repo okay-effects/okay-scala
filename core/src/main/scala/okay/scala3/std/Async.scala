@@ -1,4 +1,6 @@
-package okay.scala3
+package okay.scala3.std
+
+import okay.scala3.*
 
 import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.{ExecutionContext, Future, Promise}

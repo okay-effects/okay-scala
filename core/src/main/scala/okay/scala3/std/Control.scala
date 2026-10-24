@@ -1,4 +1,6 @@
-package okay.scala3
+package okay.scala3.std
+
+import okay.scala3.*
 
 /** DELIMITED CONTROL: `Shift(f)`, `f` given the rest of the program up to the nearest `reset` — `k`, resumable any
  * number of times — its value the `reset`'s. `P` is the answer program, `B ! R` */

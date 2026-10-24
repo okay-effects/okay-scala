@@ -11,10 +11,11 @@ resolvers += "okay-scala" at "https://okay-effects.github.io/okay-scala/maven"
 libraryDependencies += "io.github.okay-effects" %% "okay-scala" % "0.1.0"   // %%% for Scala.js and Scala Native
 ```
 
-Everything is in one import:
+Two imports: the library, and its standard effects:
 
 ```scala
-import okay.scala3.*
+import okay.scala3.*       // rows, programs, handlers, the machine
+import okay.scala3.std.*   // State, Reader, Writer, Fail, Async, ... — here, Fail
 ```
 
 ## 2. An effect

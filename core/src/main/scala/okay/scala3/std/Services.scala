@@ -1,4 +1,6 @@
-package okay.scala3
+package okay.scala3.std
+
+import okay.scala3.*
 
 /*
  * SERVICES AS EFFECTS: numbers, randomness, storage, time, logging — each an effect whose handler decides what it

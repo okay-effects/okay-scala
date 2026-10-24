@@ -1,6 +1,7 @@
 package okay.scala3.bench
 
 import okay.scala3.*
+import okay.scala3.std.*
 
 /** the lanes of the benchmark, each a run */
 trait Lane:

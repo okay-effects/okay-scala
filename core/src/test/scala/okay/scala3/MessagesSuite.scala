@@ -4,6 +4,7 @@ package okay.scala3
 class MessagesSuite extends munit.FunSuite:
   test("a handler whose rest is not the row without its effect") {
     val error = compileErrors("""
+      import okay.scala3.std.*
       type R[X] = (State % Int + Async)[X]
       def p: Int ! R = State.get[Int, R]
       State.run[Int, R, Async, Int](1)(p)""")
@@ -12,6 +13,7 @@ class MessagesSuite extends munit.FunSuite:
 
   test("a missing effect in a row of three") {
     val error = compileErrors("""
+      import okay.scala3.std.*
       def tick[R[_]: Has[State % Int]]: Int ! R = State.get
       tick[Reader % String + Writer % String + Async]""")
     assert(error.contains("the effect State % Int is not in the row Reader % String + Writer % String + Async"), error)

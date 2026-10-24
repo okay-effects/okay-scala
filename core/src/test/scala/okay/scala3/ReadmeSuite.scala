@@ -1,5 +1,7 @@
 package okay.scala3
 
+import okay.scala3.std.*
+
 /** the README's example, as it is written there */
 class ReadmeSuite extends munit.FunSuite:
   def greet[R[_]: Has[Reader % String] : Has[State % Int] : Has[Writer % String]]: Int ! R =

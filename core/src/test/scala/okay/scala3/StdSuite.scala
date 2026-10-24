@@ -1,5 +1,7 @@
 package okay.scala3
 
+import okay.scala3.std.*
+
 /** the standard effects beyond the first six, their words and handlers; resources released */
 class StdSuite extends munit.FunSuite:
 

@@ -1,5 +1,7 @@
 package okay.scala3
 
+import okay.scala3.std.*
+
 /** docs/getting-started.md's example, as it is written there */
 class GettingStartedSuite extends munit.FunSuite:
   enum Accounts[X]:

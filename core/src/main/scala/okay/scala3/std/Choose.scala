@@ -1,4 +1,6 @@
-package okay.scala3
+package okay.scala3.std
+
+import okay.scala3.*
 
 /** A CHOICE among values: its handlers resume the rest once for each — MULTI-SHOT — the alternatives not yet tried
  * kept as data, so a `cut` can drop them */

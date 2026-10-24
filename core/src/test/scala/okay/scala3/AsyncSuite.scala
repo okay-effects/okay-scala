@@ -1,5 +1,7 @@
 package okay.scala3
 
+import okay.scala3.std.*
+
 import scala.concurrent.{ExecutionContext, Future}
 
 /** asynchrony: futures awaited, timers, both at once, races, time-outs, cancelling — on every platform */

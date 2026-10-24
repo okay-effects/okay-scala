@@ -1,4 +1,6 @@
-package okay.scala3
+package okay.scala3.std
+
+import okay.scala3.*
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try

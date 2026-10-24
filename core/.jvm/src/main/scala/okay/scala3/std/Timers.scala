@@ -1,9 +1,11 @@
-package okay.scala3
+package okay.scala3.std
+
+import okay.scala3.*
 
 import java.util.concurrent.{Executors, ScheduledExecutorService, TimeUnit}
 
-/** Scala Native's timer, as the JVM's: one daemon thread, its callbacks short — they resume a program on its execution context */
-private[scala3] object Timers:
+/** the JVM's timer: one daemon thread, its callbacks short — they resume a program on its execution context */
+private[std] object Timers:
   private lazy val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r =>
     val t = Thread(r, "okay-scala-timer")
     t.setDaemon(true)

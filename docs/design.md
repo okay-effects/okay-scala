@@ -13,8 +13,7 @@ it: what Scala 2 made okay-simple give up is taken back, and nothing is kept tha
 | `Frames.scala` | K in its parts — `Frames` (σ), `Levels` (κ), `Crossed` — with `released` and `put` |
 | `Cek.scala` | the machine's steps alone: `steps`, `enter`, `leave`, `out`, `here`, `inPlace`, `run` |
 | `Messages.scala` | the macro that says what effect a program lacks |
-| `Std`, `Choose`, `Services`, `Control`, `Lift` | the standard effects, each with its words and handlers |
-| `Async` (and `Timers` of each platform) | asynchrony: waits on callbacks, driven to a `Future` |
+| `std/` | `okay.scala3.std`: the standard effects, their words and handlers — `Std`, `Choose`, `Services`, `Async`, ... |
 
 ## The rows, and no shared class
 

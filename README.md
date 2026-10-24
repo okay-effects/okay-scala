@@ -8,7 +8,8 @@ adapter runs okay-simple's interface on this machine, okay-simple's rows and pla
 **Start here: [getting started](docs/getting-started.md)** — the library added, an effect, a program, a handler, run.
 
 ```scala
-import okay.scala3.*
+import okay.scala3.*       // the rows, programs, handlers, the machine
+import okay.scala3.std.*   // the standard effects: State, Reader, Writer, Fail, Async, ...
 
 def greet[R[_]: Has[Reader % String] : Has[State % Int] : Has[Writer % String]]: Int ! R =
   for
@@ -97,7 +98,7 @@ def run[S, R[_], Rest[_], A](init: S)(p: A ! R)(using Split[State % S, R, Rest])
 | `p.into[S]`, `split(p)` | into a bigger row; an effect to the end of the row |
 | `run(p)` | a program of no effect, run |
 
-The standard effects:
+The standard effects, in `okay.scala3.std`:
 
 | Effect | Words | Handlers |
 |---|---|---|

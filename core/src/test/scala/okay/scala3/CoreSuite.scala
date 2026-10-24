@@ -1,5 +1,7 @@
 package okay.scala3
 
+import okay.scala3.std.*
+
 /** programs written once, their rows by context bounds */
 object Programs:
   def tick[R[_]: Has[State % Int]]: Int ! R =
