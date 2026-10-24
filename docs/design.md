@@ -14,6 +14,9 @@ it: what Scala 2 made okay-simple give up is taken back, and nothing is kept tha
 | `Cek.scala` | the machine's steps alone: `steps`, `enter`, `leave`, `out`, `here`, `inPlace`, `run` |
 | `Messages.scala` | the macro that says what effect a program lacks |
 | `std/` | `okay.scala3.std`: the standard effects, their words and handlers — `Std`, `Choose`, `Services`, `Async`, ... |
+| `interop/zio` | `okay-scala-zio`: ZIO's tasks lifted and lowered; `ZioRow`, its channels effects; layers |
+| `interop/cats` | `okay-scala-cats`: cats' `Monad` of programs, any monad a `Lowering`; `IOs` via `Async` |
+| `interop/tofu` | `okay-scala-tofu` (JVM): tofu's `WithLocal` and `Errors` of a `Reader` and a `Fail` |
 
 ## The rows, and no shared class
 

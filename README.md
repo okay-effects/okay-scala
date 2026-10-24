@@ -130,6 +130,41 @@ Async.toFuture(Async.both(slow(200, "a"), slow(200, "b")))     // ("a", "b"), in
 Async.toFuture(Async.timeout(30)(slow(500, 1)))                 // None: the program cancelled
 ```
 
+## Interop: ZIO, cats-effect, tofu
+
+Each its own module, beside the library:
+
+| Module | Package | Platforms | What it gives |
+|---|---|---|---|
+| `okay-scala-zio` | `okay.scala3.ziointerop` | JVM, JS, Native | ZIO in a program, a program a ZIO; typed; layers |
+| `okay-scala-cats` | `okay.scala3.catsinterop` | JVM, JS, Native | cats' `Monad`; `IO` both ways, `Resource`, race |
+| `okay-scala-tofu` | `okay.scala3.tofuinterop` | JVM | tofu's `WithLocal` of a `Reader`, `Errors` of a `Fail` |
+
+ZIO, its channels the standard effects: its environment a `Reader`, its error a `Fail`, its run an `Async` — a ZIO in a
+program, and the program back as one ZIO for ZIO's runtime to run; `provideLayer`, `layer`. Tasks alone: `fromZIOTask`,
+`toZIOTask`.
+
+```scala
+import okay.scala3.ziointerop.*
+
+type Row[X] = ZioRow[Greeting, String][X]   // Async + Fail % String + Reader % ZEnvironment[Greeting]
+val greeted: String ! Row = fromZIOTyped[Greeting, String, String, Row](ZIO.serviceWith[Greeting](_.greet("Ann")))
+val back: ZIO[Greeting, String, String] = toZIOTyped(greeted)   // run by ZIO, as any ZIO
+```
+
+cats-effect, through `Async`: `IOs.fromIO`, `IOs.toIO`, `IOs.use(resource)(f)`, `IOs.both`, `IOs.race`. cats:
+`monad[R]`, the programs' `Monad` (stack safe), and any cats monad a `Lowering` — `Lift.lower(p)` gives an `IO`.
+
+```scala
+import okay.scala3.catsinterop.{*, given}
+given IORuntime = cats.effect.unsafe.implicits.global
+
+val n: Int ! Async = IOs.fromIO[Int, Async](IO(20)).flatMap(a => IOs.fromIO[Int, Async](IO(a + 22)))
+val io: IO[Int] = IOs.toIO(n)   // 42, run as any IO
+```
+
+tofu: `withLocal[R, Rest, C]` and `errors[R, Rest, E]`, for code written over `F[_]` with tofu's classes.
+
 ## The machine
 
 One machine, `Cek`: the CEK machine of Felleisen and Friedman with the generalised continuations of Hillerström,
