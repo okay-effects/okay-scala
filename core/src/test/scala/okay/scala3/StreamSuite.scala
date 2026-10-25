@@ -107,3 +107,56 @@ class StreamSuite extends munit.FunSuite:
     assertEquals(Stream.fromIterator[Long, Pure](
       run(State.run(0)(effectful.toList))._2.iterator).toLazyList.toList, List(0L, 1L, 2L))
   }
+
+  /** a resource counted: opened, closed */
+  final class Counted:
+    var opened, closed = 0
+    def stream[R[_]](n: Long): Stream[Long, R] =
+      Stream.bracket[Unit, Long, R](defer(pure(opened += 1)))(_ => closed += 1)(_ => Stream.range[R](0, n))
+    def balanced = opened == closed
+
+  test("a resource closed once at its end, and when left: take, takeWhile, headOption, zip, flatMap, merge") {
+    val c = Counted()
+    assertEquals(run(c.stream[Pure](3).toList), List(0L, 1L, 2L))
+    assertEquals(run(c.stream[Pure](100).take(2).toList), List(0L, 1L))
+    assertEquals(run(c.stream[Pure](100).takeWhile(_ < 2).toList), List(0L, 1L))
+    assertEquals(run(c.stream[Pure](100).headOption), Some(0L))
+    assertEquals(run(c.stream[Pure](100).zip(c.stream[Pure](2)).toList), List((0L, 0L), (1L, 1L)))
+    assertEquals(run(c.stream[Pure](2).zip(c.stream[Pure](100)).toList), List((0L, 0L), (1L, 1L)))
+    assertEquals(run(c.stream[Pure](100).flatMap(i => c.stream[Pure](10).map(_ + i * 10)).take(13).toList).last, 12L)
+    assertEquals(run(Stream.merge(c.stream[Pure](100), c.stream[Pure](100)).take(3).toList), List(0L, 0L, 1L))
+    assertEquals(run(c.stream[Pure](100).map(_ + 1).filter(_ > 3).drop(1).take(1).toList), List(5L))
+    assertEquals(run(c.stream[Pure](100).grouped(3).take(2).toList).flatten.size, 6)
+    assertEquals(run(c.stream[Pure](100).interleave(c.stream[Pure](100)).take(3).toList), List(0L, 0L, 1L))
+    assertEquals(run((c.stream[Pure](2) ++ c.stream[Pure](100)).take(3).toList), List(0L, 1L, 0L))
+    assert(c.balanced, s"opened ${c.opened}, closed ${c.closed}")
+    assert(c.opened >= 15, s"opened ${c.opened}")
+  }
+
+  test("a resource closed when a value's program fails, or the stream's own pull") {
+    type F[X] = (Fail % String)[X]
+    val c = Counted()
+    val failing = c.stream[F](100).evalMap(i => if i == 2 then Fail.raise[String, F]("two") else pure[Long, F](i))
+    assertEquals(run(Fail.run(failing.toList)), Left("two"))
+    val inner = c.stream[F](100).flatMap(i => c.stream[F](3).evalMap(j =>
+      if i == 1 && j == 1 then Fail.raise[String, F]("inner") else pure[Long, F](j)))
+    assertEquals(run(Fail.run(inner.toList)), Left("inner"))
+    val zipped = c.stream[F](100).zip(c.stream[F](100).evalMap(j =>
+      if j == 3 then Fail.raise[String, F]("zip") else pure[Long, F](j)))
+    assertEquals(run(Fail.run(zipped.toList)), Left("zip"))
+    assert(c.balanced, s"opened ${c.opened}, closed ${c.closed}")
+    assertEquals(c.opened, 6)
+  }
+
+  test("an iterator closed, the rest released; mergeAsync stopped, its streams released") {
+    val c = Counted()
+    val it = c.stream[Pure](100).iterator
+    assertEquals(it.take(2).toList, List(0L, 1L))
+    it.close()
+    assert(c.balanced, s"opened ${c.opened}, closed ${c.closed}")
+    val merged = Stream.mergeAsync(c.stream[Async](100), c.stream[Async](100)).take(3).toList
+    Async.toFuture(merged).flatMap(vs => Async.toFuture(Async.sleep[Async](50)).map { _ =>
+      assertEquals(vs.size, 3)
+      assert(c.balanced, s"opened ${c.opened}, closed ${c.closed}")
+    })
+  }

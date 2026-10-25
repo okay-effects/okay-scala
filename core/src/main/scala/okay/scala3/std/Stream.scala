@@ -13,22 +13,27 @@ enum Step[+O, R[_]]:
  * A STREAM, pulled: `pull` a program of the row `R` giving its next step — nothing is run until it is pulled, and only
  * as far as it is pulled, so `take(3)` of an endless stream runs three steps. Its effects are any effects: a stream of
  * `Async` waits on callbacks, one of `Fail` may fail, one of `Sync` reads a file. A generator written with
- * `Yield.emit` is a stream (`Stream.generated`). Resources: acquired in a `Scope`, released when the scope ends —
- * a stream stopped early by `take` drops its rest unseen.
+ * `Yield.emit` is a stream (`Stream.generated`).
+ *
+ * RESOURCES: `release`, what to do if the stream is left unpulled — a file, a cursor, a Java stream closed. A stream
+ * holding one (`Stream.bracket`) closes it when it ends, when a value's program fails, and when it is left: `take`,
+ * `takeWhile`, `headOption`, `zip`'s longer, a merge stopped, call `release` of what they leave. A stream given to
+ * `++` by name is not opened until it is reached, so has nothing to release before.
  */
-final class Stream[+O, R[_]](val pull: Step[O, R] ! R):
+final class Stream[+O, R[_]](val pull: Step[O, R] ! R, val release: () => Unit = Stream.nothing):
   import Step.*
+  import Stream.{nothing, onAbort}
 
   def map[B](f: O => B): Stream[B, R] = Stream(pull.map {
     case Done() => Done()
     case Emit(o, rest) => Emit(f(o), rest.map(f))
-  })
+  }, release)
 
-  /** each value through a program of the row */
+  /** each value through a program of the row: it failing, the rest released */
   def evalMap[B](f: O => B ! R): Stream[B, R] = Stream(pull.flatMap {
     case Done() => pure(Done())
-    case Emit(o, rest) => f(o).map(b => Emit(b, rest.evalMap(f)))
-  })
+    case Emit(o, rest) => onAbort(f(o))(rest.release).map(b => Emit(b, rest.evalMap(f)))
+  }, release)
 
   /** a program of the row run for each value, the value kept */
   def evalTap(f: O => Unit ! R): Stream[O, R] = evalMap(o => f(o).as(o))
@@ -38,21 +43,29 @@ final class Stream[+O, R[_]](val pull: Step[O, R] ! R):
       case Done() => Right(Done())
       case Emit(o, rest) => if p(o) then Right(Emit(o, rest.filter(p))) else Left(rest)
     }
-  })
+  }, release)
 
   def collect[B](pf: PartialFunction[O, B]): Stream[B, R] = filter(pf.isDefinedAt).map(pf)
 
-  /** the first `n` values: the rest never pulled */
+  /** the first `n` values: the rest never pulled, released */
   def take(n: Long): Stream[O, R] =
-    if n <= 0 then Stream.empty else Stream(pull.map {
+    if n <= 0 then Stream(defer {
+      release()
+      pure(Done())
+    }, release)
+    else Stream(pull.map {
       case Done() => Done()
       case Emit(o, rest) => Emit(o, rest.take(n - 1))
-    })
+    }, release)
 
+  /** the values while `p` holds: the rest released */
   def takeWhile(p: O => Boolean): Stream[O, R] = Stream(pull.map {
     case Emit(o, rest) if p(o) => Emit(o, rest.takeWhile(p))
-    case _ => Done()
-  })
+    case Emit(_, rest) =>
+      rest.release()
+      Done()
+    case Done() => Done()
+  }, release)
 
   def drop(n: Long): Stream[O, R] = Stream(loop[(Long, Stream[O, R]), Step[O, R], R]((n, this)) { (left, s) =>
     if left <= 0 then s.pull.map(Right(_))
@@ -60,41 +73,51 @@ final class Stream[+O, R[_]](val pull: Step[O, R] ! R):
       case Done() => Right(Done())
       case Emit(_, rest) => Left((left - 1, rest))
     }
-  })
+  }, release)
 
   def dropWhile(p: O => Boolean): Stream[O, R] = Stream(loop[Stream[O, R], Step[O, R], R](this) { s =>
     s.pull.map {
       case Emit(o, rest) if p(o) => Left(rest)
       case step => Right(step)
     }
-  })
+  }, release)
 
   /** one of this, one of that, in turn; the rest of the longer at the end */
-  def interleave[O2 >: O](that: Stream[O2, R]): Stream[O2, R] = Stream(pull.flatMap {
+  def interleave[O2 >: O](that: Stream[O2, R]): Stream[O2, R] = Stream(onAbort(pull)(that.release).flatMap {
     case Done() => that.pull
     case Emit(o, rest) => pure(Emit(o, that.interleave(rest)))
-  })
+  }, both(that))
 
-  /** this stream, then `that` */
+  /** this stream, then `that`: made, and opened, when this one ends */
   def ++[O2 >: O](that: => Stream[O2, R]): Stream[O2, R] = Stream(pull.flatMap {
     case Done() => that.pull
     case Emit(o, rest) => pure(Emit(o, rest ++ that))
-  })
+  }, release)
 
-  /** each value's stream, one after another */
+  /** this stream, then `that`, a stream already held: both released if left */
+  private def concat[O2 >: O](that: Stream[O2, R]): Stream[O2, R] = Stream(onAbort(pull)(that.release).flatMap {
+    case Done() => that.pull
+    case Emit(o, rest) => pure(Emit(o, rest.concat(that)))
+  }, both(that))
+
+  /** each value's stream, one after another: left in the middle, the inner stream and the outer released */
   def flatMap[B](f: O => Stream[B, R]): Stream[B, R] = Stream(pull.flatMap {
     case Done() => pure(Done())
-    case Emit(o, rest) => (f(o) ++ rest.flatMap(f)).pull
-  })
+    case Emit(o, rest) => f(o).concat(rest.flatMap(f)).pull
+  }, release)
 
-  /** pairs, as long as the shorter */
-  def zip[B](that: Stream[B, R]): Stream[(O, B), R] = Stream(pull.flatMap {
-    case Done() => pure(Done())
-    case Emit(o, rest) => that.pull.map {
-      case Done() => Done()
+  /** pairs, as long as the shorter: the longer's rest released */
+  def zip[B](that: Stream[B, R]): Stream[(O, B), R] = Stream(onAbort(pull)(that.release).flatMap {
+    case Done() =>
+      that.release()
+      pure(Done())
+    case Emit(o, rest) => onAbort(that.pull)(rest.release).map {
+      case Done() =>
+        rest.release()
+        Done()
       case Emit(b, more) => Emit((o, b), rest.zip(more))
     }
-  })
+  }, both(that))
 
   def zipWithIndex: Stream[(O, Long), R] = zip(Stream.iterate[Long, R](0L)(_ + 1))
 
@@ -102,11 +125,18 @@ final class Stream[+O, R[_]](val pull: Step[O, R] ! R):
   def scan[B](z: B)(f: (B, O) => B): Stream[B, R] = Stream(pure(Emit(z, Stream(pull.flatMap {
     case Done() => pure(Done())
     case Emit(o, rest) => rest.scan(f(z, o))(f).pull
-  }))))
+  }, release))), release)
 
   /** the values in groups of `n`, the last maybe fewer */
-  def grouped(n: Int): Stream[List[O], R] = Stream(
-    take(n).toList.flatMap(group => if group.isEmpty then pure(Done()) else pure(Emit(group, drop(n).grouped(n)))))
+  def grouped(n: Int): Stream[List[O], R] =
+    require(n > 0, "a group of at least one")
+    Stream(loop[(Int, List[O], Stream[O, R]), Step[List[O], R], R]((0, Nil, this)) { (size, group, s) =>
+      if size == n then pure(Right(Emit(group.reverse, s.grouped(n))))
+      else s.pull.map {
+        case Done() => Right(if group.isEmpty then Done() else Emit(group.reverse, Stream.empty))
+        case Emit(o, rest) => Left((size + 1, o :: group, rest))
+      }
+    }, release)
 
   /** all of it pulled: the fold of its values, in constant stack */
   def fold[B](z: B)(f: (B, O) => B): B ! R = loop[(B, Stream[O, R]), B, R]((z, this)) { (b, s) =>
@@ -124,15 +154,59 @@ final class Stream[+O, R[_]](val pull: Step[O, R] ! R):
   /** all of it pulled, its values dropped */
   def drain: Unit ! R = fold(())((_, _) => ())
 
+  /** the first value: the rest released */
   def headOption: Option[O] ! R = pull.map {
     case Done() => None
-    case Emit(o, _) => Some(o)
+    case Emit(o, rest) =>
+      rest.release()
+      Some(o)
   }
 
   def last: Option[O] ! R = fold(Option.empty[O])((_, o) => Some(o))
 
+  /** at its end, or left, `fin` — once */
+  private[std] def finishing(fin: () => Unit): Stream[O, R] = Stream(onAbort(pull)(fin).map {
+    case Done() =>
+      fin()
+      Done()
+    case Emit(o, rest) => Emit(o, rest.finishing(fin))
+  }, () => {
+    release()
+    fin()
+  })
+
+  private def both(that: Stream[?, R]): () => Unit =
+    if (release eq nothing) && (that.release eq nothing) then nothing
+    else () =>
+      try release()
+      finally that.release()
+
 object Stream:
   import Step.*
+
+  /** nothing to release */
+  val nothing: () => Unit = () => ()
+
+  /** `p`, and `fin` if it does not end with a value: a failure, an abort */
+  private[std] def onAbort[A, R[_]](p: A ! R)(fin: () => Unit): A ! R =
+    if fin eq nothing then p
+    else okay.scala3.defer {
+      var ended = false
+      ensuring(p.map { a =>
+        ended = true
+        a
+      })(if !ended then fin())
+    }
+
+  /** `f` run at most once */
+  private def once(f: () => Unit): () => Unit =
+    val done = java.util.concurrent.atomic.AtomicBoolean(false)
+    () => if done.compareAndSet(false, true) then f()
+
+  /** A STREAM OF A RESOURCE: `acquire`d at the first pull, `use`d, and `release`d once — when the stream ends, when a
+   * value's program fails, or when it is left (`take`, `headOption`, a merge stopped) */
+  def bracket[S, O, R[_]](acquire: S ! R)(release: S => Unit)(use: S => Stream[O, R]): Stream[O, R] =
+    Stream(acquire.flatMap(s => use(s).finishing(once(() => release(s))).pull))
 
   def empty[O, R[_]]: Stream[O, R] = Stream(pure(Done()))
 
@@ -198,10 +272,13 @@ object Stream:
   private def inTurn[O, R[_]](q: scala.collection.immutable.Queue[Stream[O, R]]): Stream[O, R] =
     q.dequeueOption match
       case None => empty
-      case Some((s, others)) => Stream(s.pull.flatMap {
+      case Some((s, others)) => Stream(onAbort(s.pull)(releaseAll(others)).flatMap {
         case Done() => inTurn(others).pull
         case Emit(o, rest) => pure(Emit(o, inTurn(others.enqueue(rest))))
-      })
+      }, releaseAll(q))
+
+  private def releaseAll[O, R[_]](ss: Iterable[Stream[O, R]]): () => Unit =
+    if ss.forall(_.release eq nothing) then nothing else () => ss.foreach(_.release())
 
   /** STREAMS OF `Async` MERGED AS THEIR VALUES COME: each stream's next pull started at once, all at the same time;
    * the first to come given out, and the next of its stream started. A stream that ends is left out; one that fails
@@ -217,25 +294,54 @@ object Stream:
   private def racing[O](pending: List[(Int, Running[Step[O, Async]])])(using ec: ExecutionContext)
     : Stream[O, Async] =
     if pending.isEmpty then empty
-    else Stream(Async.fromFuture[(Int, Step[O, Async]), Async](
-      Future.firstCompletedOf(pending.map((i, r) => r.future.map(step => (i, step))))).flatMap { (i, step) =>
-      val others = pending.filterNot(_._1 == i)
-      step match
-        case Done() => racing(others).pull
-        case Emit(o, rest) => pure(Emit(o, racing(others :+ ((i, Async.start(rest.pull))))))
-    })
+    else Stream(onAbort(Async.fromFuture[(Int, Step[O, Async]), Async](
+      Future.firstCompletedOf(pending.map((i, r) => r.future.map(step => (i, step))))))(releasing(pending)).flatMap {
+      (i, step) =>
+        val others = pending.filterNot(_._1 == i)
+        step match
+          case Done() => racing(others).pull
+          case Emit(o, rest) => pure(Emit(o, racing(others :+ ((i, Async.start(rest.pull))))))
+    }, releasing(pending))
+
+  /** the pulls on their way, left: each stream's rest released when its pull comes */
+  private def releasing[O](pending: List[(Int, Running[Step[O, Async]])]): () => Unit = () =>
+    pending.foreach((_, r) => r.future.foreach {
+      case Emit(_, rest) => rest.release()
+      case _ => ()
+    }(using ExecutionContext.parasitic))
 
   extension [O](s: Stream[O, Pure])
     /** a stream of no effect as a lazy list: each value pulled when the list is read that far — its other effects
-     * handled first */
-    def toLazyList: LazyList[O] = LazyList.unfold(s)(next)
+     * handled first. A lazy list left unread cannot say so: a stream of a resource, read to its end */
+    def toLazyList: LazyList[O] = LazyList.unfold(s)(pulled)
 
-    /** a stream of no effect as an iterator: each value pulled by `next` */
-    def iterator: Iterator[O] = Iterator.unfold(s)(next)
+    /** a stream of no effect as an iterator: each value pulled by `next`; `close` releases what is left */
+    def iterator: Pulling[O] = Pulling(s)
 
-  private def next[O](s: Stream[O, Pure]): Option[(O, Stream[O, Pure])] = run(s.pull) match
+  private def pulled[O](s: Stream[O, Pure]): Option[(O, Stream[O, Pure])] = run(s.pull) match
     case Done() => None
     case Emit(o, rest) => Some((o, rest))
+
+  /** an iterator pulling a stream of no effect, one value ahead at most; `close`, the rest released */
+  final class Pulling[O](private var rest: Stream[O, Pure]) extends Iterator[O] with AutoCloseable:
+    private var ahead: Option[O] = None
+    private var ended = false
+    def hasNext: Boolean =
+      if ahead.isEmpty && !ended then pulled(rest) match
+        case None => ended = true
+        case Some((o, more)) =>
+          ahead = Some(o)
+          rest = more
+      ahead.isDefined
+    def next(): O =
+      if !hasNext then throw java.util.NoSuchElementException("the stream has ended")
+      val o = ahead.get
+      ahead = None
+      o
+    def close(): Unit = if !ended then
+      ended = true
+      ahead = None
+      rest.release()
 
   extension [O](s: Stream[O, Async])
     /** each value through `f`, up to `n` at once, the results in order */
