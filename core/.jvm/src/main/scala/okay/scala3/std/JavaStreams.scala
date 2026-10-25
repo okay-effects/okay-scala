@@ -10,17 +10,19 @@ import java.util.stream.{BaseStream, StreamSupport}
  * sequential, closing it releasing the stream's rest */
 object JavaStreams:
   /** a Java stream's values — a `Stream`, an `IntStream` (its values boxed), `Files.lines`, a collection's `stream()`
-   * — opened at the first pull, closed once: at its end, a value's program failing, or the stream left */
-  def from[O, R[_]](js: => BaseStream[O, ?]): Stream[O, R] =
+   * — opened at the first pull, read `chunk` values at a time, closed once: at its end, a value's program failing, or
+   * the stream left */
+  def from[O, R[_]](js: => BaseStream[O, ?], chunk: Int = Stream.chunkSize): Stream[O, R] =
     Stream.bracket[BaseStream[O, ?], O, R](okay.scala3.defer(pure(js)))(_.close())(opened =>
-      fromIterator[O, R](opened.iterator()))
+      fromIterator[O, R](opened.iterator(), chunk))
 
-  /** a Java iterator's values */
-  def fromIterator[O, R[_]](it: => java.util.Iterator[O]): Stream[O, R] =
+  /** a Java iterator's values, read `chunk` at a time */
+  def fromIterator[O, R[_]](it: => java.util.Iterator[O], chunk: Int = Stream.chunkSize): Stream[O, R] =
     Stream.fromIterator(new Iterator[O]:
       private lazy val java = it
       def hasNext: Boolean = java.hasNext
-      def next(): O = java.next())
+      def next(): O = java.next()
+    , chunk)
 
   extension [O](s: Stream[O, Pure])
     /** a stream of no effect as a Java stream: lazy, sequential, each value pulled as the Java stream asks; closed

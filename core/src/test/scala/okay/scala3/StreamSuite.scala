@@ -160,3 +160,23 @@ class StreamSuite extends munit.FunSuite:
       assert(c.balanced, s"opened ${c.opened}, closed ${c.closed}")
     })
   }
+
+  test("chunks: a range, a collection read many at a time; a program per value still as far as pulled") {
+    assertEquals(run(Stream.range[Pure](0, 600).chunks.map(_.size).toList), List(256, 256, 88))
+    for big <- List[Iterable[Long]](Vector.range(0L, 1000L), List.range(0L, 1000L), (0L until 1000L), Array.range(0, 1000)
+        .map(_.toLong).toSeq) do
+      assertEquals(run(Stream.emits[Long, Pure](big).fold(0L)(_ + _)), 499500L, big.getClass.getName)
+    assertEquals(run(Stream.range[Pure](0, 10, chunk = 4).chunks.map(_.toList).toList),
+      List(List(0L, 1L, 2L, 3L), List(4L, 5L, 6L, 7L), List(8L, 9L)))
+    assertEquals(run(Stream.range[Pure](0, 10).chunkLimit(3).chunks.map(_.size).toList), List(3, 3, 3, 1))
+    assertEquals(run(Stream.range[Pure](0, 10).chunks.unchunks.toList), (0L until 10L).toList)
+    assertEquals(run(Stream.range[Pure](0, 10).take(3).chunks.map(_.size).toList), List(3))
+    var ran = 0
+    val effects = Stream.range[Pure](0, 1000).evalMap(i => defer { ran += 1; pure[Long, Pure](i) })
+    assertEquals(run(effects.take(3).toList), List(0L, 1L, 2L))
+    assertEquals(ran, 3)
+    assertEquals(run(Stream.range[Pure](0, 7).zip(Stream.range[Pure](0, 7, chunk = 2)).map((a, b) => a - b).toList),
+      List.fill(7)(0L))
+    assertEquals(run(Stream.range[Pure](0, 7).grouped(3).toList).map(_.size), List(3, 3, 1))
+    assertEquals(run(Stream.range[Pure](0, 600).scan(0L)(_ + _).last), Some((0L until 600L).sum))
+  }

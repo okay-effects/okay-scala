@@ -10,8 +10,12 @@ class JavaStreamsSuite extends munit.FunSuite:
     var made = 0
     def js = java.util.stream.Stream.iterate(1, (i: Int) => { made += 1; i + 1 }).limit(100)
       .onClose(() => closed = true)
-    assertEquals(run(JavaStreams.from[Int, Pure](js).take(3).toList), List(1, 2, 3))
+    assertEquals(run(JavaStreams.from[Int, Pure](js, chunk = 1).take(3).toList), List(1, 2, 3))
     assert(made < 10, s"pulled $made ahead")
+    made = 0
+    closed = false
+    assertEquals(run(JavaStreams.from[Int, Pure](js, chunk = 10).take(3).toList), List(1, 2, 3))
+    assert(made < 20, s"pulled $made ahead, not a chunk")
     assert(closed, "left by take, not closed")
     closed = false
     assertEquals(run(JavaStreams.from[Int, Pure](js).fold(0)(_ + _)), 5050)

@@ -128,7 +128,7 @@ Beside them, with no effect of their own:
 | `Deferred` | a value given once: `complete`, `get` waits for it (`Async`) |
 | `Semaphore` | permits: `acquire`, `release`, `withPermit(p)`; a wait cancelled takes none |
 | `Queue` | `bounded(n)`, `unbounded`: `offer` waits while full, `take` while empty |
-| `Stream[O, R]` | pulled, of any effects `R`; `Stream.bracket(acquire)(release)(use)`: a resource closed once — at the end, a failure, or the stream left (`take`, `headOption`, `zip`, a merge stopped, an iterator or Java stream closed); `emits`, `range`, `iterate`, `unfold`, `eval`, `generated` (a generator of `Yield.emit`), `fromQueue`, `fromIterator`, `fromLazyList`; `JavaStreams.from(javaStream)`, `JavaStreams.fromIterator` (JVM); of no effect, `toLazyList`, `iterator`, `toJavaStream`, `javaIterator` (JVM); `map`, `evalMap`, `filter`, `take`, `drop`, `zip`, `scan`, `grouped`, `++`, `flatMap`, `interleave`; `Stream.merge` (in turn, any row); `fold`, `toList`, `foreach`; of `Async`: `Stream.mergeAsync` (as they come), `parEvalMap(n)` |
+| `Stream[O, R]` | pulled, of any effects `R`, in chunks (`Chunk`, of 256 from a collection, a range, a Java stream; `chunks`, `unchunks`, `chunkLimit`, `mapChunks`; a program per value still per value); `Stream.bracket(acquire)(release)(use)`: a resource closed once — at the end, a failure, or the stream left (`take`, `headOption`, `zip`, a merge stopped, an iterator or Java stream closed); `emits`, `range`, `iterate`, `unfold`, `eval`, `generated` (a generator of `Yield.emit`), `fromQueue`, `fromIterator`, `fromLazyList`; `JavaStreams.from(javaStream)`, `JavaStreams.fromIterator` (JVM); of no effect, `toLazyList`, `iterator`, `toJavaStream`, `javaIterator` (JVM); `map`, `evalMap`, `filter`, `take`, `drop`, `zip`, `scan`, `grouped`, `++`, `flatMap`, `interleave`; `Stream.merge` (in turn, any row); `fold`, `toList`, `foreach`; of `Async`: `Stream.mergeAsync` (as they come), `parEvalMap(n)` |
 | `Retry` | `times(n, retryOn)(p)`, `backoff(n, firstMs, factor, retryOn)(p)`: a program run again while it raises a `Fail` |
 
 Asynchrony has no runtime of its own: a program of `Async` waits on callbacks — a future, a timer — and
@@ -214,6 +214,20 @@ away — as does any second bind in any program, so every real one: the numbers 
 
 The machine is as fast as okay-simple's tuned one, with no cast. One run, 2 forks × 5 iterations, on a laptop with
 other work on it: read differences under 10% as noise.
+
+Streams (`bench/StreamBenchmark.scala`, `sbt "bench/Jmh/run StreamBenchmark"`), µs per run, a value a step against
+chunks of 256 — a step of the machine per chunk, a loop inside it; a program per value (`evalMap`) still run per value:
+
+| | a value a step | chunks |
+|---|---|---|
+| `range(0, 100000).map.filter.fold` | 4676 | 699 |
+| `emits(vector of 100000).fold` | 2847 | 712 |
+| `iterate.take(100000).fold` | 4187 | 644 |
+| `range zip range`, 50000 | 3036 | 447 |
+| `flatMap` to pairs, 10000 | 1453 | 891 |
+| `evalTap` of a state, 10000 | 794 | 578 |
+
+One fork × 5 iterations, the same laptop.
 
 ## Building
 
