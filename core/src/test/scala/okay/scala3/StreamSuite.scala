@@ -86,3 +86,24 @@ class StreamSuite extends munit.FunSuite:
       yield vs
     Async.toFuture(p).map(vs => assertEquals(vs, List(1, 2, 3)))
   }
+
+  test("iterators, iterables, lazy lists: both ways; pulled twice, the same values") {
+    val once = Stream.fromIterator[Int, Pure](Iterator(1, 2, 3))
+    assertEquals(run(once.toList), List(1, 2, 3))
+    val twice = Stream.emits[Int, Pure](Vector(1, 2))
+    assertEquals(run(twice.toList) ++ run(twice.toList), List(1, 2, 1, 2))
+    var made = 0
+    val ll = LazyList.iterate(0)(i => { made += 1; i + 1 })
+    assertEquals(run(Stream.fromLazyList[Int, Pure](ll).take(3).toList), List(0, 1, 2))
+    assert(made <= 3, s"made $made")
+    var pulled = 0
+    val counted = Stream.iterate[Int, Pure](0)(_ + 1).evalMap(i => defer { pulled += 1; pure(i) })
+    val lazyList = counted.toLazyList
+    assertEquals(pulled, 0)
+    assertEquals(lazyList.take(4).toList, List(0, 1, 2, 3))
+    assertEquals(counted.iterator.drop(2).next(), 2)
+    type R[X] = (State % Int)[X]
+    val effectful = Stream.range[R](0, 3).evalTap(_ => State.modify[Int, R](_ + 1))
+    assertEquals(Stream.fromIterator[Long, Pure](
+      run(State.run(0)(effectful.toList))._2.iterator).toLazyList.toList, List(0L, 1L, 2L))
+  }

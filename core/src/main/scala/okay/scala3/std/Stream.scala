@@ -138,11 +138,24 @@ object Stream:
 
   def emit[O, R[_]](o: O): Stream[O, R] = Stream(pure(Emit(o, empty)))
 
+  /** an iterable's values — a `List`, a `Vector`, a `Range`, a `Set`: its iterator's */
   def emits[O, R[_]](os: Iterable[O]): Stream[O, R] = fromIterator(os.iterator)
 
-  /** an iterator's values: pulled once */
-  def fromIterator[O, R[_]](it: Iterator[O]): Stream[O, R] =
-    Stream(defer(pure(if it.hasNext then Emit(it.next(), fromIterator(it)) else Done())))
+  /** an iterator's values: the iterator made at the first pull, its values pulled one at a time, as far as asked;
+   * each step remembered, so the stream pulled twice gives the same values */
+  def fromIterator[O, R[_]](it: => Iterator[O]): Stream[O, R] = Stream(defer(stepping[O, R](it).pull))
+
+  /** a lazy list's values, endless or not, as it makes them */
+  def fromLazyList[O, R[_]](ll: LazyList[O]): Stream[O, R] =
+    Stream(defer(pure(if ll.isEmpty then Done() else Emit(ll.head, fromLazyList(ll.tail)))))
+
+  /** a step of the iterator, taken once, when first pulled */
+  private def stepping[O, R[_]](it: Iterator[O]): Stream[O, R] =
+    lazy val step: Step[O, R] = if it.hasNext then
+      val o = it.next()
+      Emit(o, stepping(it))
+    else Done()
+    Stream(defer(pure(step)))
 
   /** a program's value, as a stream of one */
   def eval[O, R[_]](p: O ! R): Stream[O, R] = Stream(p.map(o => Emit(o, empty)))
@@ -211,6 +224,18 @@ object Stream:
         case Done() => racing(others).pull
         case Emit(o, rest) => pure(Emit(o, racing(others :+ ((i, Async.start(rest.pull))))))
     })
+
+  extension [O](s: Stream[O, Pure])
+    /** a stream of no effect as a lazy list: each value pulled when the list is read that far — its other effects
+     * handled first */
+    def toLazyList: LazyList[O] = LazyList.unfold(s)(next)
+
+    /** a stream of no effect as an iterator: each value pulled by `next` */
+    def iterator: Iterator[O] = Iterator.unfold(s)(next)
+
+  private def next[O](s: Stream[O, Pure]): Option[(O, Stream[O, Pure])] = run(s.pull) match
+    case Done() => None
+    case Emit(o, rest) => Some((o, rest))
 
   extension [O](s: Stream[O, Async])
     /** each value through `f`, up to `n` at once, the results in order */
