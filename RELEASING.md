@@ -18,8 +18,9 @@ libraryDependencies += "io.github.okay-effects" %% "okay-scala" % "0.1.1"
 1. On `master`, everything green, on every platform and on both Scala 3s:
 
    ```sh
-   sbt +coreJVM/test
-   sbt -Dplatforms=jvm,js,native coreJS/test coreNative/test
+   sbt +coreJVM/test zioInteropJVM/test catsInteropJVM/test tofuInterop/test
+   sbt -Dplatforms=jvm,js,native coreJS/test coreNative/test zioInteropJS/test zioInteropNative/test \
+     catsInteropJS/test catsInteropNative/test
    ```
 
 2. The version: `ThisBuild / version` in `build.sbt` without `-SNAPSHOT`, committed, tagged (`v0.1.0`).
@@ -29,7 +30,9 @@ libraryDependencies += "io.github.okay-effects" %% "okay-scala" % "0.1.1"
 
    ```sh
    rm -rf target/pages-maven
-   sbt -Dplatforms=jvm,js,native coreJVM/publish coreJS/publish coreNative/publish
+   sbt -Dplatforms=jvm,js,native coreJVM/publish coreJS/publish coreNative/publish zioInteropJVM/publish \
+     zioInteropJS/publish zioInteropNative/publish catsInteropJVM/publish catsInteropJS/publish \
+     catsInteropNative/publish tofuInterop/publish
    ```
 
 4. Onto `gh-pages`, under `maven/`, beside the releases already there:

@@ -140,6 +140,10 @@ Each its own module, beside the library:
 | `okay-scala-cats` | `okay.scala3.catsinterop` | JVM, JS, Native | cats' `Monad`; `IO` both ways, `Resource`, race |
 | `okay-scala-tofu` | `okay.scala3.tofuinterop` | JVM | tofu's `WithLocal` of a `Reader`, `Errors` of a `Fail` |
 
+```scala
+libraryDependencies += "io.github.okay-effects" %% "okay-scala-zio" % "0.1.1"    // or okay-scala-cats, okay-scala-tofu
+```
+
 ZIO, its channels the standard effects: its environment a `Reader`, its error a `Fail`, its run an `Async` — a ZIO in a
 program, and the program back as one ZIO for ZIO's runtime to run; `provideLayer`, `layer`. Tasks alone: `fromZIOTask`,
 `toZIOTask`.
