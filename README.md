@@ -116,7 +116,20 @@ The standard effects, in `okay.scala3.std`:
 | `Store.Of[K, V]` | `load`, `save`, `remove` | `Store.inMemory(map)` |
 | `Clock` | `now`, `sleep` | `Clock.virtual(start)`: time at once; `Clock.system` (JVM, Native) |
 | `Log` | `debug`, `info`, `warn`, `error` | `Log.collect(least)`, `Log.to(sink, least)` |
-| `Async` | `fromFuture`, `async`, `sleep`, `both`, `parTraverse`, `race`, `timeout` | `Async.toFuture`, `Async.start` |
+| `Async` | `fromFuture`, `async`, `cancellable`, `sleep`, `blocking`, `never`, `fork` (a `Fiber`: `join`, `cancel`), `both`, `parTraverse`, `race`, `timeout` | `Async.toFuture`, `Async.start` |
+| `Sync` (side effects) | `delay`, `attempt` | `Sync.run`: in place; `Sync.on(pool)`: each on a pool, through `Async` |
+| `Scope` (resources, fibers) | `acquire(a)(release)`, `defer(release)`, `fork` | `Scope.run`: all released at its end, the last first; its fibers cancelled |
+
+Beside them, with no effect of their own:
+
+| | |
+|---|---|
+| `Ref` | a value shared by fibers: `get`, `set`, `update`, `modify` — atomic |
+| `Deferred` | a value given once: `complete`, `get` waits for it (`Async`) |
+| `Semaphore` | permits: `acquire`, `release`, `withPermit(p)`; a wait cancelled takes none |
+| `Queue` | `bounded(n)`, `unbounded`: `offer` waits while full, `take` while empty |
+| `Stream[O, R]` | pulled, of any effects `R`: `emits`, `range`, `iterate`, `unfold`, `eval`, `generated` (a generator of `Yield.emit`), `fromQueue`; `map`, `evalMap`, `filter`, `take`, `drop`, `zip`, `scan`, `grouped`, `++`, `flatMap`, `interleave`; `Stream.merge` (in turn, any row); `fold`, `toList`, `foreach`; of `Async`: `Stream.mergeAsync` (as they come), `parEvalMap(n)` |
+| `Retry` | `times(n, retryOn)(p)`, `backoff(n, firstMs, factor, retryOn)(p)`: a program run again while it raises a `Fail` |
 
 Asynchrony has no runtime of its own: a program of `Async` waits on callbacks — a future, a timer — and
 `Async.toFuture` drives it, its other effects handled first. On the JVM, Scala.js and Scala Native:

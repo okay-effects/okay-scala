@@ -5,7 +5,7 @@ import okay.scala3.*
 import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.control.NonFatal
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 /** AN ASYNCHRONOUS OPERATION: `Suspend(register)`, the program waiting until `register`'s callback is called — with
  * its value, or its failure; `register` gives back how to cancel the wait (a timer cleared, another run cancelled).
@@ -17,6 +17,14 @@ enum Async[X]:
  * future failed with [[Cancelled]] */
 final class Running[A](val future: Future[A], cancelling: () => Unit):
   def cancel(): Unit = cancelling()
+
+/** a program started on its own (`Async.fork`): its value awaited, or it cancelled */
+final class Fiber[A](val running: Running[A]):
+  /** its value when it ends; its failure, or `Cancelled`, failing the program that waits. Cancelling the wait does not
+   * cancel the fiber */
+  def join[R[_]](using In[Async, R]): A ! R = Async.fromFuture(running.future)
+  /** the fiber cancelled: the wait it is in cancelled, its rest never run */
+  def cancel[R[_]]: Unit ! R = defer(pure(running.cancel()))
 
 /** what a cancelled program's future fails with */
 final class Cancelled extends RuntimeException("cancelled")
@@ -45,6 +53,18 @@ object Async:
       case Success(x) => cb(Right(x))
       case Failure(e) => cb(Left(e))
     }(using ExecutionContext.parasitic))
+
+  /** `f` run on `pool` — a blocking call, a thread of its own — its value or what it throws: the thread that got here
+   * free at once, the program resumed when `f` ends */
+  def blocking[X, R[_]](f: => X)(using pool: ExecutionContext, at: In[Async, R]): X ! R =
+    async[X, R](cb => pool.execute(() => cb(Try(f).toEither)))
+
+  /** a wait that never ends: until cancelled */
+  def never[X, R[_]](using In[Async, R]): X ! R = cancellable[X, R](_ => noCancel)
+
+  /** `p` started on its own, the program going on: a fiber, to join or cancel */
+  def fork[A, R[_]](p: A ! Async)(using ec: ExecutionContext, at: In[Async, R]): Fiber[A] ! R =
+    defer(pure(Fiber(start(p))))
 
   /** `ms` milliseconds later */
   def sleep[R[_]](ms: Long)(using In[Async, R]): Unit ! R =
