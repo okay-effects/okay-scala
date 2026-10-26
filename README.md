@@ -115,6 +115,7 @@ The standard effects, in `okay.scala3.std`:
 | `Random` | `long`, `int(bound)`, `double` | `Random.seeded(seed)`: splitmix64, the same each run |
 | `Store.Of[K, V]` | `load`, `save`, `remove` | `Store.inMemory(map)` |
 | `Clock` | `now`, `sleep` | `Clock.virtual(start)`: time at once; `Clock.system` (JVM, Native) |
+| `Env` | `variable`, `secret` | `Env.of(vars, secrets)`; `Env.system` |
 | `Log` | `debug`, `info`, `warn`, `error` | `Log.collect(least)`, `Log.to(sink, least)` |
 | `Async` | `fromFuture`, `async`, `cancellable`, `sleep`, `blocking`, `never`, `fork` (a `Fiber`: `join`, `cancel`), `both`, `parTraverse`, `race`, `timeout` | `Async.toFuture`, `Async.start` |
 | `Sync` (side effects) | `delay`, `attempt` | `Sync.run`: in place; `Sync.on(pool)`: each on a pool, through `Async` |

@@ -91,7 +91,7 @@ result; put it inside, `Accounts.inMemory(...)(Fail.run(...))`, and the accounts
 ## Next
 
 - the standard effects — `State`, `Reader`, `Writer`, `Fail`, `Abort`, `Choose`, `Yield`, `Fresh`, `Random`,
-  `Store`, `Clock`, `Log`, `Async`, `Sync`, `Scope`, `Control`, `Lift`; `Ref`, `Deferred`, `Semaphore`, `Queue`,
+  `Store`, `Clock`, `Env`, `Log`, `Async`, `Sync`, `Scope`, `Control`, `Lift`; `Ref`, `Deferred`, `Semaphore`, `Queue`,
   `Retry`, `Stream` — and interception: [the README](../README.md)
 - ZIO, cats-effect and tofu: modules of their own, [the README's interop](../README.md#interop-zio-cats-effect-tofu)
 - how it works, and the code file by file: [design](design.md)

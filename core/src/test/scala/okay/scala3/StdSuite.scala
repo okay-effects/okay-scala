@@ -103,6 +103,16 @@ class StdSuite extends munit.FunSuite:
     assertEquals(run(Store.inMemory(Map.empty[String, Int])(p)), (Map("b" -> 2), (Some(1), None)))
   }
 
+  test("Env: variables and secrets, asked apart, by the handler given") {
+    val p: (Option[String], Option[String], Option[String]) ! Env =
+      for
+        region <- Env.variable[Env]("REGION")
+        key <- Env.secret[Env]("API_KEY")
+        asVar <- Env.variable[Env]("API_KEY")
+      yield (region, key, asVar)
+    assertEquals(run(Env.of(Map("REGION" -> "eu"), Map("API_KEY" -> "k"))(p)), (Some("eu"), Some("k"), None))
+  }
+
   test("Clock: virtual time, a day of sleeps in no time") {
     val p: (Long, Long) ! Clock =
       for

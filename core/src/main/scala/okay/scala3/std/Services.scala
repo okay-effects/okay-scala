@@ -3,9 +3,10 @@ package okay.scala3.std
 import okay.scala3.*
 
 /*
- * SERVICES AS EFFECTS: numbers, randomness, storage, time, logging — each an effect whose handler decides what it
- * is: a counter or a database's sequence, a seed or the system's generator, a map or a store, a virtual clock or the
- * system's, a list or a sink. The program is the same; a test gives it handlers that are always the same.
+ * SERVICES AS EFFECTS: numbers, randomness, storage, time, configuration, logging — each an effect whose handler
+ * decides what it is: a counter or a database's sequence, a seed or the system's generator, a map or a store, a
+ * virtual clock or the system's, a map or the process's environment, a list or a sink. The program is the same; a
+ * test gives it handlers that are always the same.
  */
 
 /** a supply of fresh numbers, each never given before in the run */
@@ -94,6 +95,26 @@ object Clock:
     handle(p, Handler.tail[Clock, Rest, A, A](pure)([X] => (op: Clock[X]) => op match
       case Now() => System.currentTimeMillis()
       case Sleep(millis) => Thread.sleep(millis)))
+
+/** CONFIGURATION: a variable and a secret, by name — the process's environment, a cloud's vars and secrets, a map
+ * in a test. A secret is asked for apart, so a handler may keep it apart (a vault) and an audit can tell */
+enum Env[X]:
+  case Var(name: String) extends Env[Option[String]]
+  case Secret(name: String) extends Env[Option[String]]
+
+object Env:
+  def variable[R[_]](name: String)(using In[Env, R]): Option[String] ! R = perform[Env](Var(name))
+  def secret[R[_]](name: String)(using In[Env, R]): Option[String] ! R = perform[Env](Secret(name))
+
+  /** the variables and the secrets given */
+  def of[R[_], Rest[_], A](vars: Map[String, String], secrets: Map[String, String] = Map.empty)(p: A ! R)(
+    using Split[Env, R, Rest]): A ! Rest =
+    handle(p, Handler.tail[Env, Rest, A, A](pure)([X] => (op: Env[X]) => op match
+      case Var(name) => vars.get(name)
+      case Secret(name) => secrets.get(name)))
+
+  /** the process's environment, a secret among its variables (Scala.js: none) */
+  def system[R[_], Rest[_], A](p: A ! R)(using Split[Env, R, Rest]): A ! Rest = of(sys.env, sys.env)(p)
 
 /** a log's levels */
 enum Level:
