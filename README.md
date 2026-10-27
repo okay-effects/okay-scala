@@ -110,7 +110,7 @@ The standard effects, in `okay.scala3.std`:
 | `Choose` (multi-shot) | `among`, `flip`, `none`, `guard`, `once`, `mark`, `cut` | `Choose.all`, `Choose.first` |
 | `Yield % O` (generators) | `emit` | `Yield.collect`, `Yield.foreach(f)`, `Yield.take(n)` |
 | `Control % (B ! R)` | `shift` | `Control.reset` |
-| `Lifted[G]` | `lift` | `Lift.lower`, by a `Lowering[G]`: `Option`, `Either`, `Try`, `Future` |
+| `Lifted[G]` | `lift` | `Lift.lower` (a `Lowering[G]`); `Lift.handle`, in place (a `Distributes[G]`); `Lift.via(nt)` |
 | `Fresh` | `next` | `Fresh.from(n)` |
 | `Random` | `long`, `int(bound)`, `double` | `Random.seeded(seed)`: splitmix64, the same each run |
 | `Store.Of[K, V]` | `load`, `save`, `remove` | `Store.inMemory(map)` |
@@ -143,6 +143,74 @@ def slow[A](ms: Long, a: A): A ! Async = Async.sleep[Async](ms).as(a)
 Async.toFuture(Async.both(slow(200, "a"), slow(200, "b")))     // ("a", "b"), in 200 ms, not 400
 Async.toFuture(Async.timeout(30)(slow(500, 1)))                 // None: the program cancelled
 ```
+
+## Other monads in a program: data in place, one control monad last
+
+`Lift.lift(ga)` performs a `G[X]` of another monad. Such monads come in two kinds, and a program may have any number
+of the first and one of the second:
+
+| | |
+|---|---|
+| DATA MONADS: `Option`, `Either[E, _]`, `Try`, `List`, `Vector` | any number, each IN PLACE by `Lift.handle[G]` |
+| ONE CONTROL MONAD — `Future`, `IO`, a ZIO task | last, by `Lift.lower`: the program given back as one of it |
+| several control monads | brought to one by `Lift.via(nt)`, a monad morphism, then lowered |
+
+```scala
+trait Distributes[G[_]]:
+  def pure[A](a: A): G[A]
+  def flatMapIn[A, B, R[_]](ga: G[A])(k: A => G[B] ! R): G[B] ! R
+
+type ~>[G[_], H[_]] = [X] => G[X] => H[X]
+
+Lift.handle[G](p: A ! R)(using Split[Lifted[G], R, Rest], Distributes[G]): G[A] ! Rest
+Lift.via[G, H](nt: G ~> H)(p: A ! R)(using Split[Lifted[G], R, Rest], In[Lifted[H], Rest]): A ! Rest
+Lift.lower(p: A ! Lifted[G])(using Lowering[G]): G[A]       // and of a row Split[Lifted[G], R, Pure]: Pure + Lifted[G]
+```
+
+`Distributes[G]` is a DISTRIBUTIVE LAW of `G` over any row: a `G[A]` bound to a continuation that is a program, the
+`G` coming out on the other side — `G` given back inside the program, not the program inside `G`. Only a TRAVERSABLE
+monad has one: its values can be gone through, each given to `k`, in order. `Option`, `Either`, `Try` give `k` their
+one value or none; `List` and `Vector` traverse `k` over their elements IN ORDER, one after another, then concatenate
+what each gave. `Future` and `IO` have none, by design: what a future will hold cannot be gone through now, inside
+another program's run — composing them needs a distributive law that does not exist, which is why one of them, the
+last, is lowered and never handled in place.
+
+```scala
+type Row[X] = (Lifted[Option] + Lifted[List] + Lifted[Future])[X]
+val p: Int ! Row = ...
+
+Lift.lower(Lift.handle[List](Lift.handle[Option](p)))   // Future[List[Option[Int]]]
+Lift.lower(Lift.handle[Option](Lift.handle[List](p)))   // Future[Option[List[Int]]]
+```
+
+The order is the meaning, as with any two handlers: `Option` handled first (innermost) makes each way of the list an
+`Option` of its own — a `None` ends its way only; `List` handled first makes the list one value inside the `Option`, so
+a `None` anywhere ends them all.
+
+`Lift.handle[List]` goes DEPTH FIRST, as `Choose.all` does: the whole rest of the program for the first element, then
+for the next. With another effect in the row:
+
+- handled OUTSIDE (`State.run(s)(Lift.handle[List](p))`), the state is threaded through the elements in order: each
+  element's way sees the state the way before it left — the traversal is sequential;
+- handled INSIDE (`Lift.handle[List](State.run(s)(p))`), each element's way has the state of the time of the `lift`,
+  its own — a stateful handler's cell is given afresh to each `k` resumed.
+
+`flatMapIn` keeps the monad laws, in the row: left identity, `flatMapIn(pure(a))(k) == k(a)`; right identity,
+`flatMapIn(ga)(a => pure(pure(a))) == pure(ga)`; associativity — for `Option`, `Either`, `Try` with any effects in
+the row; for `List` and `Vector` when the row's effects commute (a sum, a set of what was seen). That is ListT's old
+limit: with effects that do not commute, `flatMapIn(flatMapIn(xs)(k))(h)` runs every `k` before any `h` (breadth
+first), and `flatMapIn(xs)(x => k(x).flatMap(flatMapIn(_)(h)))` each `k` with its `h`s (depth first). `Lift.handle`
+always makes the second: its `k` is the whole rest of the program.
+
+`lower` binds in `G`, each operation's rest run inside the bind: for a strict monad (`Option`, `Either`) that nests a
+run per operation, so a long program of one is handled in place instead, `run(Lift.handle[G](p))`, in constant stack.
+
+`Lift.via(nt)` replaces each `Lifted[G]` operation by the `Lifted[H]` one `nt` makes, in the row already: a `Try` as a
+`Future`, an `Option` as an `Either`; `okay-scala-cats` gives `IOs.toFuture` (an `IO` as a `Future`, on an
+`IORuntime`), `okay-scala-zio` `taskToFuture()` (a ZIO task as a `Future`, on a `Runtime`). Each data monad handled
+where it stands, the control monads brought to one and that one lowered: Filinski's LAYERED MONADS ("Representing
+layered monads", POPL 1999), in practice — each monad a layer, reflected (`lift`) and reified (`handle`, `lower`) in
+the order of its layer.
 
 ## Interop: ZIO, cats-effect, tofu
 

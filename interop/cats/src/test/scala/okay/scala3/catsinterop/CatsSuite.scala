@@ -42,6 +42,13 @@ class CatsSuite extends munit.FunSuite:
     Lift.lower[IO, Int](p).unsafeToFuture().map(v => assertEquals(v, 42))
   }
 
+  test("via: IOs as Futures, on an explicit runtime, one control monad lowered") {
+    type R[X] = (Lifted[IO] + Lifted[Future])[X]
+    val p: Int ! R = Lift.lift[Future, Int, R](Future(20)).flatMap(a => Lift.lift[IO, Int, R](IO(a + 22)))
+    val f: Future[Int] = Lift.lower(Lift.via[IO, Future](IOs.toFuture(summon[IORuntime]))(p))
+    f.map(v => assertEquals(v, 42))
+  }
+
   test("fromIO: an IO's value, or its failure, the program's") {
     val p: Int ! Async = IOs.fromIO[Int, Async](IO(20)).flatMap(a => IOs.fromIO[Int, Async](IO(a + 22)))
     val failed: Int ! Async = IOs.fromIO[Int, Async](IO.raiseError(RuntimeException("boom")))

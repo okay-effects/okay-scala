@@ -29,6 +29,13 @@ class ZioSuite extends munit.FunSuite:
     unsafeRun(toZIOTask(p).either).map(v => assertEquals(v.left.map(_.getMessage), Left("boom")))
   }
 
+  test("via: ZIO tasks as Futures, one control monad lowered") {
+    type R[X] = (Tasks + Lifted[Future])[X]
+    val p: Int ! R = Lift.lift[Future, Int, R](Future(20)).flatMap(a => fromZIOTask[Int, R](ZIO.attempt(a + 22)))
+    val f: Future[Int] = Lift.lower(Lift.via[zio.Task, Future](taskToFuture())(p))
+    f.map(v => assertEquals(v, 42))
+  }
+
   type Row[X] = ZioRow[Greeting, String][X]
   val hello: Greeting = (name: String) => s"hello, $name"
 

@@ -153,3 +153,4 @@ print the type lambdas they are, or, under a context bound, nothing at all.
 | `last` and `init` were ambiguous for an effect twice in a row | the prototype | priorities by inheritance |
 | on Scala.js, a program of ten thousand handlers, built eagerly, overflowed the stack while it was built | the test of depth | the program built as the run gets to it, `defer` |
 | `At` made the machine's own programs 8–25% slower: the place comparison grew too big to be inlined | an A/B of the commit before against the commit after | the commonest places compared in a small method, the rest in loops of their own |
+| `Lift.lower` of a strict monad (`Either`) took stack: a run nested in each bind, one per operation | 100 000 lifts through `Lift.via` | such a program handled in place, `Lift.handle`, in constant stack; `lower` kept for the last, control monad |

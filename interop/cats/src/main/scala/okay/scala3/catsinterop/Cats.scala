@@ -6,7 +6,7 @@ import cats.effect.unsafe.IORuntime
 import okay.scala3.*
 import okay.scala3.std.*
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
 /** a program over the row `R`, as cats sees it: a type constructor of its value */
@@ -52,6 +52,10 @@ object IOs:
       Some(IO(running.cancel()))
     }
   }
+
+  /** an `IO` as a `Future`, run on `runtime` when lifted: `Lift.via(IOs.toFuture(runtime))(p)` brings a program's
+   * `Lifted[IO]` to its `Lifted[Future]`, to lower one control monad */
+  def toFuture(runtime: IORuntime): IO ~> Future = [X] => (io: IO[X]) => io.unsafeToFuture()(using runtime)
 
   /** a `Resource` acquired, used by `f`, released after — when `f` ends, fails, or is cancelled */
   def use[A, B, R[_]](resource: Resource[IO, A])(f: A => B ! Async)(using IORuntime, In[Async, R]): B ! R =

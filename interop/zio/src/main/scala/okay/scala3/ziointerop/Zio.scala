@@ -3,7 +3,7 @@ package okay.scala3.ziointerop
 import okay.scala3.*
 import okay.scala3.std.*
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 import zio.{Exit, Runtime, Tag, Task, Unsafe, ZEnvironment, ZIO, ZLayer}
 
@@ -20,6 +20,11 @@ def fromZIOTask[X, R[_]](task: Task[X])(using In[Tasks, R]): X ! R = Lift.lift[T
 
 /** a program whose one effect is ZIO's tasks, as ONE task: a throw in it the task's failure */
 def toZIOTask[A](p: A ! Tasks): Task[A] = ZIO.suspend(Lift.lower[Task, A](p)(using taskLowering))
+
+/** a ZIO task as a `Future`, run on `runtime` when lifted: `Lift.via(taskToFuture())(p)` brings a program's `Tasks`
+ * to its `Lifted[Future]`, to lower one control monad */
+def taskToFuture(runtime: Runtime[Any] = Runtime.default): Task ~> Future =
+  [X] => (task: Task[X]) => Unsafe.unsafe(implicit u => runtime.unsafe.runToFuture(task): Future[X])
 
 /**
  * THE ROW OF A ZIO, typed, each of ZIO's channels one of the standard effects: its environment `Env` a `Reader %
