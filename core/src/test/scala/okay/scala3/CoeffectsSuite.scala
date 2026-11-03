@@ -1,6 +1,6 @@
 package okay.scala3
 
-import okay.scala3.std.{Coeffects, History}
+import okay.scala3.std.{Cofree, Coeffects, History}
 import scala.util.Random
 
 /** COEFFECTS OVER AN EFFECT: the history a comonad (its laws); commands refused after three failures in a row, the
@@ -79,4 +79,28 @@ class CoeffectsSuite extends munit.FunSuite:
     assertEquals(asked, Vector("ls", "rm"))
     assertEquals(answers, Vector(false, false, false, true, false, false, false, false))
     assertEquals(ran, 7)    // "rm" refused by the person: never run
+
+  def tree(seed: Int, depth: Int): Cofree[Int] =
+    Cofree(seed, if depth == 0 then Nil else List(seed * 2, seed * 3 + 1).map(tree(_, depth - 1)))
+
+  test("the cofree comonad's laws over 50 trees; the risk below each point by extend"):
+    val f: Cofree[Int] => Int = t => t.head + t.size
+    val g: Cofree[Int] => Int = t => t.all.count(_ % 2 == 0)
+    for seed <- 1 to 50 do
+      val t = tree(seed, seed % 4)
+      assertEquals(t.extend(f).extract, f(t))
+      assertEquals(t.extend(_.extract), t)
+      assertEquals(t.extend(g).extend(f), t.extend(x => f(x.extend(g))))
+    val risk = tree(1, 3).extend(t => t.all.count(_ > 20))
+    assertEquals(risk.head, tree(1, 3).all.count(_ > 20))
+    assertEquals(risk.tail.map(_.head), tree(1, 3).tail.map(_.all.count(_ > 20)))
+
+  test("a tree unfolded by a program: breadth first, its budget kept, each node asked once"):
+    var asked = Vector.empty[Int]
+    val t = run(Cofree.unfold[Int, Pure](1, 6)(n => { asked :+= n; pure(if n > 40 then Nil else List(n * 2, n * 3)) }))
+    assertEquals(t.size, 6)
+    assertEquals(asked, Vector(1, 2, 3))          // the seed, then its children, breadth first, till the budget
+    assertEquals(t.all, List(1, 2, 4, 6, 3, 6))
+    assertEquals(run(Cofree.unfold[Int, Pure](1, 100)(n => pure(if n > 10 then Nil else List(n * 2)))).paths,
+      List(List(1, 2, 4, 8, 16)))
 
