@@ -55,3 +55,28 @@ class CoeffectsSuite extends munit.FunSuite:
       assertEquals(History.of(kept).map(_.extend(stuck).all).getOrElse(Vector.empty), live, s"seed $seed")
       refused += live.count(identity)
     assert(refused > 100, s"$refused refused")
+
+  test("a decision that is a program: stuck, a person asked — on a yes the command goes on, on a no it is answered"):
+    enum Ask[X]:
+      case Go(why: String) extends Ask[Boolean]
+    var asked = Vector.empty[String]
+    var ran = 0
+    type Row[X] = (Cmd + Ask)[X]
+    val cmds = Vector("bad", "bad", "bad", "ls", "bad", "bad", "bad", "rm")
+    val program = cmds.foldLeft(pure[Vector[Boolean], Row](Vector.empty))((acc, c) =>
+      acc.flatMap(v => perform[Cmd][Row, Boolean](Cmd.Exec(c)).map(v :+ _)))
+    val guarded = Coeffects.aroundHistory[Cmd, Seen, Row, Vector[Boolean]](program)(
+      [X] => (op: Cmd[X]) => op match { case Cmd.Exec(c) => (c, None) },
+      [X] => (op: Cmd[X], x: X) => op match { case Cmd.Exec(c) => (c, Some(x)) })(
+      [X] => (h: History[Seen], op: Cmd[X], proceed: X ! Row) => op match
+        case Cmd.Exec(c) if stuck(h) =>
+          perform[Ask][Row, Boolean](Ask.Go(c)).flatMap(yes => if yes then proceed else pure[X, Row](false))
+        case _ => proceed)
+    val answers = run(handle(handle(guarded, Handler.tail[Ask, Cmd, Vector[Boolean], Vector[Boolean]](pure)(
+      [X] => (op: Ask[X]) => op match { case Ask.Go(c) => asked :+= c; c == "ls" })),
+      Handler.tail[Cmd, Pure, Vector[Boolean], Vector[Boolean]](pure)([X] => (op: Cmd[X]) => op match
+        case Cmd.Exec(c) => ran += 1; !c.startsWith("bad"))))
+    assertEquals(asked, Vector("ls", "rm"))
+    assertEquals(answers, Vector(false, false, false, true, false, false, false, false))
+    assertEquals(ran, 7)    // "rm" refused by the person: never run
+

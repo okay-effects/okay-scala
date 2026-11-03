@@ -33,12 +33,17 @@ object Coeffects:
    * audit. The history is the program's as it runs (one run) */
   def overHistory[E[_], H, R[_], A](p: A ! R)(pending: [X] => E[X] => H, ended: [X] => (E[X], X) => H)(
       decide: [X] => (History[H], E[X]) => Option[X])(using In[E, R]): A ! R =
+    aroundHistory[E, H, R, A](p)(pending, ended)([X] => (h: History[H], op: E[X], proceed: X ! R) =>
+      decide[X](h, op).fold(proceed)(x => pure[X, R](x)))
+
+  /** as `overHistory`, the decision a program of the row: given the history, the operation and its way on
+   * (`proceed`), it may ask a person, wait, do something before — and go on, or answer in its place. Whatever answers
+   * it, the answer is kept in the history */
+  def aroundHistory[E[_], H, R[_], A](p: A ! R)(pending: [X] => E[X] => H, ended: [X] => (E[X], X) => H)(
+      decide: [X] => (History[H], E[X], X ! R) => X ! R)(using In[E, R]): A ! R =
     var past = Vector.empty[H]
-    around[E, R, A](p)([X] => (op: E[X], proceed: X ! R) => decide[X](History(past, pending[X](op)), op) match
-      case Some(x) =>
-        past :+= ended[X](op, x)
-        pure[X, R](x)
-      case None => proceed.map { x =>
+    around[E, R, A](p)([X] => (op: E[X], proceed: X ! R) =>
+      decide[X](History(past, pending[X](op)), op, proceed).map { x =>
         past :+= ended[X](op, x)
         x
       })
