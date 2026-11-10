@@ -76,6 +76,9 @@ trait NaturalInit:
   given init[E[_], R[_], G[_], Rest[_]](using at: Natural[E, R, Rest]): Natural[E, R + G, Rest + G] =
     Natural(Place.Init(at))
 
+/** the row the compiler gives a program whose row nothing says */
+private[scala3] type Unsaid[X] = Any
+
 /** a context bound: `def tick[R[_]: Has[State % Int]]: Int ! R` */
 type Has[E[_]] = [R[_]] =>> In[E, R]
 
@@ -162,6 +165,11 @@ object Sub extends SubMore:
     def apply[E[_]](at: At[E, R, ?]): At[E, R, ?] = at
 
 trait SubMore extends SubOne:
+  /** the row of a `pure` or a `unit` that nothing said, in a branch beside words (`Branches`): no operation is of it */
+  given unsaid[S[_]]: Sub[Unsaid, S] = new Sub[Unsaid, S]:
+    def apply[E[_]](at: At[E, Unsaid, ?]): At[E, S, ?] =
+      throw IllegalStateException("an operation of a row that nothing said")
+
   /** `R + E`: `R`'s places and `E`'s */
   given more[R[_], E[_], S[_]](using r: Sub[R, S], e: In[E, S]): Sub[R + E, S] = new Sub[R + E, S]:
     def apply[E2[_]](at: At[E2, R + E, ?]): At[E2, S, ?] = (at: @unchecked) match

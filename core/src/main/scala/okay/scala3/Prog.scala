@@ -131,6 +131,11 @@ extension [E[_], X](w: Word[E, X])
   /** this word as a program of the row `R` */
   def into[R[_]](using at: In[E, R]): X ! R = Prog.Perform(at.place, w)
 
+/** a word or a program in every branch of an `if` or a `match` that is bound (`Branches`) */
+extension [V](inline p: Unplaced[V] | Prog[?, V])
+  inline def flatMap[R[_], B](f: V => B ! R): B ! R = ${ Branches.flatMap[R, V, B]('p, 'f) }
+  inline def map[R[_], B](f: V => B): B ! R = ${ Branches.map[R, V, B]('p, 'f) }
+
 /** `E` handled by `h` from wherever it is in `p`'s row: the program over the rest */
 def handle[E[_], R[_], Rest[_], A, B](p: A ! R, h: Handler[E, Rest, A, B])(using at: Split[E, R, Rest])
 : B ! Rest = Prog.Handle(p, at.place, h)
