@@ -11,7 +11,7 @@ import scala.quoted.*
  * where it is written, by a macro: each branch is made a program of the row on its own (`Fits`), as if
  * the row had been expected of it. Nothing of it is left at run time.
  */
-object Branches:
+private[scala3] object Branches:
   def flatMap[R[_]: Type, V: Type, B: Type](p: Expr[Any], f: Expr[V => B ! R])(using Quotes): Expr[B ! R] =
     '{ ${ placed[R, V](p) }.flatMap($f) }
 
@@ -32,7 +32,7 @@ object Branches:
       case leaf => leaf.tpe.widen.asType match
         case '[t] =>
           val row = Messages.written(TypeRepr.of[R])
-          val fits = Expr.summon[Fits[t, R, V]].getOrElse(
+          val fits = Expr.summon[Prog.Fits[t, R, V]].getOrElse(
             report.errorAndAbort(s"neither a word nor a program of the row $row: ${leaf.tpe.widen.show}", leaf.pos))
           '{ $fits(${ leaf.asExprOf[t] }) }.asTerm
     branch(p.asTerm).asExprOf[V ! R]

@@ -116,12 +116,12 @@ effects, the words whose type no argument says are there both ways: `State.get[I
 
 What still says a type:
 
-- `s <- State.get[Int]` in a declared row â the row comes too late to say what the next line takes; under an evidence
+- `s <- State.get[Int]` in a declared row — the row comes too late to say what the next line takes; under an evidence
   in scope (`R[_]: Has[State % Int]`) `State.get` says nothing, as before;
 - a program with NO declared type takes its row from what follows its last bind: of two effects or more, declare it,
-  or say the row there â `for x <- Choose.among(xs); _ <- State.put[Int, App](x) yield x`;
+  or say the row there — `for x <- Choose.among(xs); _ <- State.put[Int, App](x) yield x`;
 - a program of a smaller row bound in a bigger one (`_ <- tick`, with `def tick[R[_]: Has[State % Int]]`) runs under
-  one more level of the machine, which renames its operations on their way out; said its row â `tick[App]` â it does
+  one more level of the machine, which renames its operations on their way out; said its row — `tick[App]` — it does
   not. A word costs nothing; an operation alone, or a value, is made anew at its place, with no level.
 
 And a handler now leaves the row as one would write it: `App` without `Accounts` is `Fail % String` (it was

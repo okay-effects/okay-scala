@@ -50,31 +50,33 @@ object Split extends SplitFound:
   def apply[E[_], R[_], Rest[_]](at: Place[E, R, Rest]): Split[E, R, Rest] = at
   extension [E[_], R[_], Rest[_]](s: Split[E, R, Rest]) def place: Place[E, R, Rest] = s
 
-trait SplitFound extends SplitMissing:
+  /**
+   * THE PLACE A HANDLER TAKES `E` FROM, the row left as one would write it: of `A + B` without `A`, `B` — not
+   * `Pure + B`; of `A + B + C` without `A`, `B + C`. Found before the place as it is written (`Split.found`), which is
+   * still what is found where that row is the one asked for. Evidence: nobody writes its name, so it is here and not
+   * beside `Split`, where an `import okay.scala3.*` would bring it over a name of one's own.
+   */
+  opaque type Natural[E[_], R[_], Rest[_]] <: Place[E, R, Rest] = Place[E, R, Rest]
+
+  /** the last effect before the first of two, so that an effect twice in a row is taken at its last place, as ever */
+  object Natural extends NaturalFirst:
+    given last[R[_], E[_]]: Natural[E, R + E, R] = Place.Last()
+    def apply[E[_], R[_], Rest[_]](at: Place[E, R, Rest]): Natural[E, R, Rest] = at
+
+  trait NaturalFirst extends NaturalInit:
+    given first[E[_], G[_]]: Natural[E, E + G, G] = Natural(Place.First())
+
+  trait NaturalInit:
+    given init[E[_], R[_], G[_], Rest[_]](using at: Natural[E, R, Rest]): Natural[E, R + G, Rest + G] =
+      Natural(Place.Init(at))
+
+/** the layers of `Split`'s search are the library's own names: an `import okay.scala3.*` does not bring them */
+private[scala3] trait SplitFound extends SplitMissing:
   /** the row left as it is written, the effect taken out — `Pure + B` of `A + B`, where that is what is asked */
   given found[E[_], R[_], Rest[_]](using at: Place[E, R, Rest]): Split[E, R, Rest] = Split(at)
 
 trait SplitMissing:
   inline given missing[E[_], R[_], Rest[_]]: Split[E, R, Rest] = ${ Messages.notSplit[E, R, Rest] }
-
-/**
- * THE PLACE A HANDLER TAKES `E` FROM, the row left as one would write it: of `A + B` without `A`, `B` — not `Pure + B`;
- * of `A + B + C` without `A`, `B + C`. Found before the place as it is written (`Split.found`), which is still what is
- * found where that row is the one asked for.
- */
-opaque type Natural[E[_], R[_], Rest[_]] <: Place[E, R, Rest] = Place[E, R, Rest]
-
-/** the last effect before the first of two, so that an effect twice in a row is taken at its last place, as ever */
-object Natural extends NaturalFirst:
-  given last[R[_], E[_]]: Natural[E, R + E, R] = Place.Last()
-  def apply[E[_], R[_], Rest[_]](at: Place[E, R, Rest]): Natural[E, R, Rest] = at
-
-trait NaturalFirst extends NaturalInit:
-  given first[E[_], G[_]]: Natural[E, E + G, G] = Natural(Place.First())
-
-trait NaturalInit:
-  given init[E[_], R[_], G[_], Rest[_]](using at: Natural[E, R, Rest]): Natural[E, R + G, Rest + G] =
-    Natural(Place.Init(at))
 
 /** the row the compiler gives a program whose row nothing says */
 private[scala3] type Unsaid[X] = Any

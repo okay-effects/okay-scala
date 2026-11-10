@@ -29,9 +29,42 @@ enum Prog[R[_], +A]:
   case Resume[Rest[_], X, B, R0[_], V0, E[_], R[_], A](inner: Frames[R0, X, V0], crossed: Crossed[R0, V0, R, A],
                                                        at: At[E, R, Rest], h: Handler[E, Rest, A, B], x: X) extends Prog[Rest, B]
 
+/** beside the conversion of a word, THE EVIDENCE A BIND ASKS FOR (`Fits`, `Known`): given search finds it here, and
+ * nobody writes its names — so they are not beside `Prog`, where an `import okay.scala3.*` would bring them over a
+ * name of one's own */
 object Prog:
   /** a word is a program of any row that has its effect: its place is found where the row is known */
   implicit def placed[E[_], X, R[_]](w: Word[E, X])(using at: In[E, R]): X ! R = w.into
+
+  /**
+   * `P` IS A PROGRAM OF THE ROW `R`, to a `V`: as it is — and then this is nothing at run time; or a word, by its
+   * effect's place; or a program of a smaller row, put into `R` as `into` does. What a bind asks of its program, and
+   * a branch of each of its parts (`Branches`).
+   */
+  trait Fits[-P, R[_], +V]:
+    def apply(p: P): V ! R
+
+  object Fits extends FitsInto:
+    given same[R[_], A]: Fits[A ! R, R, A] = p => p
+    given word[E[_], X, R[_]](using at: In[E, R]): Fits[Word[E, X], R, X] = w => w.into
+
+  trait FitsInto:
+    given smaller[R[_], S[_], A](using sub: Sub[R, S]): Fits[A ! R, S, A] = p => Fits.embedded(p, sub)
+
+    /** `p`, its places those of `S`: a value, or an operation alone, made anew at its place there; any other program
+     * under a level that renames what passes it (`Remap`) */
+    private[scala3] def embedded[R[_], S[_], A](p: A ! R, sub: Sub[R, S]): A ! S = p match
+      case v: Prog.Value[r, a] => Prog.Value(v.a)
+      case o: Prog.Perform[r, e, x] => Prog.Perform(sub(o.at), o.op)
+      case _ => Prog.Remap(p, sub)
+
+  /** THE EFFECT `E` AS THE EVIDENCE IN SCOPE HAS IT. A word bound in a program generic in its row — `State.get` under
+   * `R[_]: Has[State % Int]` — takes its `Int` from here, before the function that follows it is read; with no
+   * evidence in scope it is found anyway, and says nothing. Nothing at run time */
+  opaque type Known[E[_]] = Unit
+
+  object Known:
+    inline given known[E[_], R[_]](using inline at: In[E, R]): Known[E] = ()
 
 // -- THE WORDS
 
@@ -67,35 +100,13 @@ extension [A, R[_]](p: A ! R)
    * the row of what `f` gives; or else this program's own. This program need not be of that row: one of a smaller
    * row is put into it, as `into` does (`Fits`) — under a level that renames its operations on their way out, which
    * a program of the row itself, or generic in its row, does not pay */
-  def flatMap[S[_], B](f: A => B ! S)(using fits: Fits[A ! R, S, A]): B ! S = Prog.FlatMap(fits(p), f)
+  def flatMap[S[_], B](f: A => B ! S)(using fits: Prog.Fits[A ! R, S, A]): B ! S = Prog.FlatMap(fits(p), f)
   /** a value through `f`; its row is the one expected of it, or this program's own */
-  def map[S[_], B](f: A => B)(using fits: Fits[A ! R, S, A]): B ! S = Prog.Map(fits(p), f)
+  def map[S[_], B](f: A => B)(using fits: Prog.Fits[A ! R, S, A]): B ! S = Prog.Map(fits(p), f)
   def as[B](b: B): B ! R = Prog.Map(p, _ => b)
   def andThen[B](q: => B ! R): B ! R = Prog.FlatMap(p, _ => q)
   /** this program in a row of more effects */
   def into[S[_]](using s: Sub[R, S]): A ! S = Prog.Remap(p, s)
-
-/**
- * `P` IS A PROGRAM OF THE ROW `R`, to a `V`: as it is — and then this is nothing at run time; or a word, by its
- * effect's place; or a program of a smaller row, put into `R` as `into` does. What a bind asks of its program, and a
- * branch of each of its parts (`Branches`).
- */
-trait Fits[-P, R[_], +V]:
-  def apply(p: P): V ! R
-
-object Fits extends FitsInto:
-  given same[R[_], A]: Fits[A ! R, R, A] = p => p
-  given word[E[_], X, R[_]](using at: In[E, R]): Fits[Word[E, X], R, X] = w => w.into
-
-trait FitsInto:
-  given smaller[R[_], S[_], A](using sub: Sub[R, S]): Fits[A ! R, S, A] = p => Fits.embedded(p, sub)
-
-  /** `p`, its places those of `S`: a value, or an operation alone, made anew at its place there; any other program
-   * under a level that renames what passes it (`Remap`) */
-  private[scala3] def embedded[R[_], S[_], A](p: A ! R, sub: Sub[R, S]): A ! S = p match
-    case v: Prog.Value[r, a] => Prog.Value(v.a)
-    case o: Prog.Perform[r, e, x] => Prog.Perform(sub(o.at), o.op)
-    case _ => Prog.Remap(p, sub)
 
 /**
  * AN OPERATION, NOT YET PLACED: a word of an effect — `State.get[Int]`, `Choose.among(List(1, 2))`. It says no row:
@@ -105,27 +116,20 @@ trait FitsInto:
  */
 opaque type Word[E[_], X] <: Unplaced[X] = E[X]
 
-/** what a word is as far as its answer goes: branches of words come to one type by it (`Branches`) */
-opaque type Unplaced[+X] = Any
+/** what a word is as far as its answer goes: branches of words come to one type by it (`Branches`). The library's own
+ * name: an `import okay.scala3.*` does not bring it */
+private[scala3] opaque type Unplaced[+X] = Any
 
 /** the word of an operation: `def deposit(n: Int) = word(Accounts.Deposit(n))` — no row, no evidence */
 def word[E[_], X](op: E[X]): Word[E, X] = op
 
-/** THE EFFECT `E` AS THE EVIDENCE IN SCOPE HAS IT. A word bound in a program generic in its row — `State.get` under
- * `R[_]: Has[State % Int]` — takes its `Int` from here, before the function that follows it is read; with no evidence
- * in scope it is found anyway, and says nothing. Nothing at run time */
-opaque type Known[E[_]] = Unit
-
-object Known:
-  inline given known[E[_], R[_]](using inline at: In[E, R]): Known[E] = ()
-
 /** The order of a bind's clauses is the order the compiler learns in: the effect's own type from the evidence in
- * scope (`Known`), so that `f`'s argument has its type; then `f`, and with it or with what is expected the row; then
- * the effect's place in that row. */
+ * scope (`Prog.Known`), so that `f`'s argument has its type; then `f`, and with it or with what is expected the row;
+ * then the effect's place in that row. */
 extension [E[_], X](w: Word[E, X])
-  def flatMap[R[_], B](using Known[E])(f: X => B ! R)(using at: In[E, R]): B ! R =
+  def flatMap[R[_], B](using Prog.Known[E])(f: X => B ! R)(using at: In[E, R]): B ! R =
     Prog.FlatMap(Prog.Perform(at.place, w), f)
-  def map[R[_], B](using Known[E])(f: X => B)(using at: In[E, R]): B ! R = Prog.Map(Prog.Perform(at.place, w), f)
+  def map[R[_], B](using Prog.Known[E])(f: X => B)(using at: In[E, R]): B ! R = Prog.Map(Prog.Perform(at.place, w), f)
   def as[R[_], B](b: B)(using at: In[E, R]): B ! R = Prog.Map(Prog.Perform(at.place, w), _ => b)
   def andThen[R[_], B](q: => B ! R)(using at: In[E, R]): B ! R = Prog.FlatMap(Prog.Perform(at.place, w), _ => q)
   /** this word as a program of the row `R` */

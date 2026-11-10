@@ -7,8 +7,8 @@ it: what Scala 2 made okay-simple give up is taken back, and nothing is kept tha
 
 | File | What is in it |
 |---|---|
-| `Rows.scala` | the rows (`+`, `%`, `Void`), places (`Place`, `At`, `Taken`, `Escape`), `In`, `Split` (`Natural`), `Sub` |
-| `Prog.scala` | the language: `!`, `Prog` (the machine's C), its words, from `pure` to `run`; `Word`, `word`, `Fits` |
+| `Rows.scala` | the rows (`+`, `%`, `Void`), places (`Place`, `At`, `Taken`, `Escape`), `In`, `Split` (`Split.Natural`), `Sub` |
+| `Prog.scala` | the language: `!`, `Prog` (the machine's C), its words, from `pure` to `run`; `Word`, `word`; in `Prog`'s companion the evidence of a bind, `Prog.Fits` and `Prog.Known` |
 | `Handler.scala` | `Handler`, its four shapes and their makers, `Cell`; `fresh` and `ret` |
 | `Frames.scala` | K in its parts — `Frames` (σ), `Levels` (κ), `Crossed` — with `released` and `put` |
 | `Cek.scala` | the machine's steps alone: `steps`, `enter`, `leave`, `out`, `here`, `inPlace`, `run` |
@@ -139,7 +139,7 @@ inlines a method, it binds the arguments to proxies typed outside the clause's G
 known to be `Unit` in that case — no longer fits a `flatMap` that wants a `Unit => P`. The JIT inlines those small
 methods anyway.
 
-Two macros. `Branches` takes apart an `if` or a `match` that is bound, and places each branch â a word, a program â
+Two macros. `Branches` takes apart an `if` or a `match` that is bound, and places each branch — a word, a program —
 in the row. `Messages.notIn`: the error of a missing effect. `In` and `Split` are opaque types over `Place`, each with a
 fallback given, below the one that finds a place; it runs only when no place is found, at the top of the search, and
 says the effect and the row as they are written — `State % Int`, `Reader % String + State % Int` — where Scala would

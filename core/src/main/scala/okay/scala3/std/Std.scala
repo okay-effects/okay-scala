@@ -13,8 +13,8 @@ enum State[S, X]:
   case Get[S]() extends State[S, S]
   case Put[S](s: S) extends State[S, Unit]
 
-/** `State.get[Int]`: the word, not yet placed in a row â the row is the program's, known where it is used */
-trait StateWords:
+/** `State.get[Int]`: the word, not yet placed in a row — the row is the program's, known where it is used */
+private[std] trait StateWords:
   def get[S]: Word[State % S, S] = word(State.Get())
 
 object State extends StateWords:
@@ -36,7 +36,7 @@ enum Reader[E, X]:
   case Ask[E]() extends Reader[E, E]
 
 /** `Reader.ask[String]`: the word, not yet placed in a row */
-trait ReaderWords:
+private[std] trait ReaderWords:
   def ask[E]: Word[Reader % E, E] = word(Reader.Ask())
 
 object Reader extends ReaderWords:
@@ -100,7 +100,7 @@ enum Abort[X]:
   case Exit[X]() extends Abort[X]
 
 /** `Abort.exit[Int]`: the word, not yet placed in a row */
-trait AbortWords:
+private[std] trait AbortWords:
   def exit[X]: Word[Abort, X] = word(Abort.Exit[X]())
 
 object Abort extends AbortWords:

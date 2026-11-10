@@ -12,7 +12,7 @@ enum Choose[X]:
   case Cut(mark: Int) extends Choose[Unit]
 
 /** `Choose.none[Int]`: the word, not yet placed in a row */
-trait ChooseWords:
+private[std] trait ChooseWords:
   def none[X]: Word[Choose, X] = word(Choose.Among(Nil))
 
 object Choose extends ChooseWords:
