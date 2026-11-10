@@ -7,12 +7,13 @@ it: what Scala 2 made okay-simple give up is taken back, and nothing is kept tha
 
 | File | What is in it |
 |---|---|
-| `Rows.scala` | the rows (`+`, `%`, `Void`), places (`Place`, `At`, `Taken`, `Escape`), `In`, `Split`, `Sub` |
-| `Prog.scala` | the language: `!`, `Prog` (the machine's C), its words, from `pure` to `run` |
+| `Rows.scala` | the rows (`+`, `%`, `Void`), places (`Place`, `At`, `Taken`, `Escape`), `In`, `Split` (`Natural`), `Sub` |
+| `Prog.scala` | the language: `!`, `Prog` (the machine's C), its words, from `pure` to `run`; `Word`, `word`, `Fits` |
 | `Handler.scala` | `Handler`, its four shapes and their makers, `Cell`; `fresh` and `ret` |
 | `Frames.scala` | K in its parts — `Frames` (σ), `Levels` (κ), `Crossed` — with `released` and `put` |
 | `Cek.scala` | the machine's steps alone: `steps`, `enter`, `leave`, `out`, `here`, `inPlace`, `run` |
 | `Messages.scala` | the macro that says what effect a program lacks |
+| `Branches.scala` | the macro that places each branch of an `if` or a `match` that is bound |
 | `std/` | `okay.scala3.std`: the standard effects, their words and handlers — `Std`, `Choose`, `Services`, `Async`, `Sync`, `Concurrent` (`Ref`, `Deferred`, `Semaphore`, `Queue`), `Retry`, `Scope`, `Stream`, ... |
 | `interop/zio` | `okay-scala-zio`: ZIO's tasks lifted and lowered; `ZioRow`, its channels effects; layers |
 | `interop/cats` | `okay-scala-cats`: cats' `Monad` of programs, any monad a `Lowering`; `IOs` via `Async` |
@@ -138,7 +139,8 @@ inlines a method, it binds the arguments to proxies typed outside the clause's G
 known to be `Unit` in that case — no longer fits a `flatMap` that wants a `Unit => P`. The JIT inlines those small
 methods anyway.
 
-One macro, `Messages.notIn`: the error of a missing effect. `In` and `Split` are opaque types over `Place`, each with a
+Two macros. `Branches` takes apart an `if` or a `match` that is bound, and places each branch â a word, a program â
+in the row. `Messages.notIn`: the error of a missing effect. `In` and `Split` are opaque types over `Place`, each with a
 fallback given, below the one that finds a place; it runs only when no place is found, at the top of the search, and
 says the effect and the row as they are written — `State % Int`, `Reader % String + State % Int` — where Scala would
 print the type lambdas they are, or, under a context bound, nothing at all.

@@ -8,7 +8,7 @@ import scala.quoted.*
  *   _ <- if bad then Fail.raise[String]("no") else if odd then Writer.tell[String](n) else unit
  *
  * Such an expression has no one type to bind, and at run time a word does not say what it is. So it is taken apart
- * where it is written, by the second macro here: each branch is made a program of the row on its own (`Fits`), as if
+ * where it is written, by a macro: each branch is made a program of the row on its own (`Fits`), as if
  * the row had been expected of it. Nothing of it is left at run time.
  */
 object Branches:

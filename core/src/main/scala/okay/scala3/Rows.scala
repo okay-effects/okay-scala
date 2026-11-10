@@ -213,9 +213,9 @@ object Taken:
         case j: Place.Init[e2, r2, g2, rest2] => (outside(i.at, j.at): @unchecked) match
           case null => null
           case q: Place[E2, rest, ?] @unchecked => Place.Init(q)
-        case _: Place.First[e2, g2] => (outside(i.at, Place.Only[e2]()): @unchecked) match
-          case null => null
-          case q: Place[E2, rest, ?] @unchecked => Place.Init(q)
+        case _: Place.First[e2, g2] => (i.at: @unchecked) match
+          case _: Place.Only[e3] => null
+          case _: Place.Absurd[r3] => Place.First[e2, g2]()
         case _: Place.Absurd[r2] => Place.Absurd()
       case _: Place.First[e, g] => (at: @unchecked) match
         case _: Place.First[e2, g2] => null
@@ -243,10 +243,9 @@ object Taken:
           case _: Mine[e3, r3] => Mine()
           case t: Theirs[e3, e4, r4] => (t.at: @unchecked) match
             case q: Place[e4, r4, ?] @unchecked => Theirs(Place.Init(q))
-        case _: Place.First[e2, g2] => Taken(i.at, Place.Only[e2]()) match
-          case _: Mine[e3, r3] => Mine()
-          case t: Theirs[e3, e4, r4] => (t.at: @unchecked) match
-            case q: Place[e4, r4, ?] @unchecked => Theirs(Place.Init(q))
+        case _: Place.First[e2, g2] => (i.at: @unchecked) match
+          case _: Place.Only[e3] => Mine()
+          case _: Place.Absurd[r3] => Theirs(Place.First[e2, g2]())
         case _: Place.Absurd[r2] => Theirs(Place.Absurd())
       case _: Place.First[e, g] => (at: @unchecked) match
         case _: Place.First[e2, g2] => Mine()

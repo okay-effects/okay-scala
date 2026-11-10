@@ -3,7 +3,7 @@ package okay.scala3
 import scala.quoted.*
 
 /**
- * THE COMPILE ERRORS of a missing effect: the one macro here, for what given search cannot say — the effect and the
+ * THE COMPILE ERRORS of a missing effect: a macro, for what given search cannot say — the effect and the
  * row as they are written, `State % Int` and `Reader % String + State % Int`, where Scala would print the type
  * lambdas they are, or nothing at all under a context bound.
  */

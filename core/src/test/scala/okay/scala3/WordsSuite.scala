@@ -35,6 +35,19 @@ class WordsSuite extends munit.FunSuite:
     assertEquals(run(State.run(1)(State.run(2)(twice))), (1, (7, 7)))
   }
 
+  test("the first of two: a handler's place and an operation's are one place, however each was found") {
+    // an operation at the place a handler's evidence found: the first of two
+    def got[R[_], Rest[_]](using Split[State % Int, R, Rest]): Int ! R = perform[State % Int](State.Get())
+    val p: Int ! App = got[App, Choose].flatMap(s => Choose.among[Int, App](List(s, s + 1)))
+    assertEquals(run(Choose.all(State.run(5)(p))), List((5, 5), (5, 6)))
+    assertEquals(run(State.run(5)(Choose.all(p))), (5, List(5, 6)))
+    // the handler at the place as it is written, the operation at the first of two
+    assertEquals(run(Choose.all(State.run[Int, App, Pure + Choose, Int](5)(p))), List((5, 5), (5, 6)))
+    // and in a bigger row, its places renamed
+    type Wider[X] = (Writer % String + Choose + State % Int)[X]
+    assertEquals(run(Writer.run(Choose.all(State.run(5)(p.into[Wider])))), (Nil, List((5, 5), (5, 6))))
+  }
+
   def all[A](p: A ! App): List[(Int, A)] = run(Choose.all(State.run(0)(p)))
   def tick[R[_]: Has[State % Int]]: Unit ! R = State.modify[Int, R](_ + 1)
 

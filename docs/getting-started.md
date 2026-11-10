@@ -88,6 +88,45 @@ run(Fail.run(Accounts.inMemory(Map("ann" -> 50))(payday[App])))   // Right((Map(
 The order of the handlers is a choice of meaning: with `Fail` outside, a failure drops the accounts with the
 result; put it inside, `Accounts.inMemory(...)(Fail.run(...))`, and the accounts are kept up to the failure.
 
+## A row declared: words that say none
+
+The program above is generic in its row, and takes its effects as evidence. A program can also DECLARE its row, and
+then nothing in it has to say one: a bind takes the row expected of it, and what is bound is put into that row.
+
+```scala
+val payday: Int ! App =
+  for
+    _ <- Accounts.deposit("ann", 100)
+    b <- Accounts.balance("ann")
+    _ <- if b > 1000 then Fail.raise("too rich") else unit
+  yield b
+```
+
+An effect's own words need no evidence, either. The old way, still there, and the new beside it:
+
+```scala
+def balance[R[_]](who: String)(using In[Accounts, R]): Int ! R = perform[Accounts](Balance(who))   // a program of `R`
+def owed(who: String) = word(Balance(who))                 // a `Word[Accounts, Int]`: the operation, not yet placed
+```
+
+A word is placed where the row is known: bound in a `for` of a declared row, or under an evidence in scope; where a
+program is expected (`val p: Int ! App = Accounts.owed("ann")`); or by `owed("ann").into[App]`. Of the standard
+effects, the words whose type no argument says are there both ways: `State.get[Int]` beside `State.get[Int, App]`,
+`Reader.ask[String]`, `Abort.exit[Int]`, `Choose.none[Int]`.
+
+What still says a type:
+
+- `s <- State.get[Int]` in a declared row â the row comes too late to say what the next line takes; under an evidence
+  in scope (`R[_]: Has[State % Int]`) `State.get` says nothing, as before;
+- a program with NO declared type takes its row from what follows its last bind: of two effects or more, declare it,
+  or say the row there â `for x <- Choose.among(xs); _ <- State.put[Int, App](x) yield x`;
+- a program of a smaller row bound in a bigger one (`_ <- tick`, with `def tick[R[_]: Has[State % Int]]`) runs under
+  one more level of the machine, which renames its operations on their way out; said its row â `tick[App]` â it does
+  not. A word costs nothing; an operation alone, or a value, is made anew at its place, with no level.
+
+And a handler now leaves the row as one would write it: `App` without `Accounts` is `Fail % String` (it was
+`Pure + Fail % String`, which is still found where it is the row asked for).
+
 ## Next
 
 - the standard effects — `State`, `Reader`, `Writer`, `Fail`, `Abort`, `Choose`, `Yield`, `Fresh`, `Random`,
