@@ -184,6 +184,13 @@ class WordsSuite extends munit.FunSuite:
     assert(compileErrors("run(Choose.all(State.run(0)(p.flatMap(n => State.put(n)))))").nonEmpty)
   }
 
+  test("the binds of 0.1.1, kept in the bytecode for what was compiled against it: the same row, the same program") {
+    val p: Int ! App = Choose.among[Int, App](List(1, 2))
+    val q: Int ! App = p.flatMapOfTheSameRow(n => State.put[Int, App](n).map(_ => n))
+    assertEquals(all(q.mapOfTheSameRow(_ + 1)), List((1, 2), (2, 3)))
+    assertEquals(all(q.mapOfTheSameRow(_ + 1)), all(q.map(_ + 1)))
+  }
+
 enum Account[X]:
   case Deposit(amount: Int) extends Account[Int]
 

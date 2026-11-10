@@ -1,5 +1,6 @@
 package okay.scala3
 
+import scala.annotation.targetName
 import scala.language.implicitConversions
 
 /** a program of the value `A` over the row `R`: `Int ! Reader % String + State % Int` */
@@ -107,6 +108,18 @@ extension [A, R[_]](p: A ! R)
   def andThen[B](q: => B ! R): B ! R = Prog.FlatMap(p, _ => q)
   /** this program in a row of more effects */
   def into[S[_]](using s: Sub[R, S]): A ! S = Prog.Remap(p, s)
+
+/**
+ * THE BINDS OF 0.1.1, for what was compiled against it: there `flatMap` and `map` took the program and the function
+ * and no evidence, the row one. They are kept under their names in the bytecode (`targetName`), and are the binds
+ * above with the evidence of the same row. In source they have other names, and are the library's own: a program
+ * written now gets the binds above.
+ */
+extension [A, R[_]](p: A ! R)
+  @targetName("flatMap")
+  private[scala3] def flatMapOfTheSameRow[B](f: A => B ! R): B ! R = p.flatMap(f)(using Prog.Fits.same)
+  @targetName("map")
+  private[scala3] def mapOfTheSameRow[B](f: A => B): B ! R = p.map(f)(using Prog.Fits.same)
 
 /**
  * AN OPERATION, NOT YET PLACED: a word of an effect — `State.get[Int]`, `Choose.among(List(1, 2))`. It says no row:
