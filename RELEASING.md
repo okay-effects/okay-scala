@@ -23,6 +23,9 @@ libraryDependencies += "io.github.okay-effects" %% "okay-scala" % "0.1.1"
      catsInteropJS/test catsInteropNative/test
    ```
 
+   And binary compatible with the last release (MiMa; `lastRelease` in `build.sbt`, moved to the new version after
+   a release): `sbt -Dplatforms=jvm,js,native mimaReportBinaryIssues` reports nothing.
+
 2. The version: `ThisBuild / version` in `build.sbt` without `-SNAPSHOT`, committed, tagged (`v0.1.0`).
 
 3. The repository written into `target/pages-maven/`, for all three platforms — WITHOUT `+`: the `_3` artifacts are

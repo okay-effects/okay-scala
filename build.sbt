@@ -38,9 +38,20 @@ val platformsAsked: Set[String] =
 val platforms: Seq[sbtcrossproject.Platform] = Seq[sbtcrossproject.Platform](JVMPlatform) ++
   (if (platformsAsked("js")) Seq(JSPlatform) else Nil) ++ (if (platformsAsked("native")) Seq(NativePlatform) else Nil)
 
+/** BINARY COMPATIBILITY, CHECKED (MiMa): every published artifact against the last release, taken from the release
+ * repository — `sbt mimaReportBinaryIssues`, and with `-Dplatforms=jvm,js,native` the other platforms' too */
+val lastRelease = "0.1.1"
+ThisBuild / resolvers += "okay-scala releases" at "https://okay-effects.github.io/okay-scala/maven"
+/** the resolver is the build's own: the POMs name no repository, as before */
+ThisBuild / pomIncludeRepository := (_ => false)
+/** `root` and `bench` are not published: nothing to check them against */
+ThisBuild / mimaFailOnNoPrevious := false
+val compatible = Seq(mimaPreviousArtifacts := Set(organization.value %%% name.value % lastRelease))
+
 /** THE LIBRARY: rows, programs, handlers, the CEK machine, the standard effects */
 lazy val core = crossProject(platforms: _*).crossType(CrossType.Pure).in(file("core"))
   .settings(name := "okay-scala", libraryDependencies += "org.scalameta" %%% "munit" % "1.2.3" % Test)
+  .settings(compatible)
 
 val munit = Def.setting("org.scalameta" %%% "munit" % "1.2.3" % Test)
 
@@ -48,6 +59,7 @@ val munit = Def.setting("org.scalameta" %%% "munit" % "1.2.3" % Test)
  * a `Fail`, its run an `Async` — and layers. ZIO's runtime on Scala.js and Scala Native reads `java.time`: a port of it
  * for the tests */
 lazy val zioInterop = crossProject(platforms: _*).crossType(CrossType.Pure).in(file("interop/zio")).dependsOn(core)
+  .settings(compatible)
   .settings(name := "okay-scala-zio", libraryDependencies ++= Seq("dev.zio" %%% "zio" % "2.1.14", munit.value),
     libraryDependencies ++= (if (crossProjectPlatform.value == JVMPlatform) Nil
       else Seq("io.github.cquiroz" %%% "scala-java-time" % "2.6.0" % Test)))
@@ -55,6 +67,7 @@ lazy val zioInterop = crossProject(platforms: _*).crossType(CrossType.Pure).in(f
 /** INTEROP WITH CATS AND CATS-EFFECT: cats' `Monad` of the programs, any cats monad lowered to; an `IO` performed in a
  * program and a program an `IO`, a `Resource` used, both and race over `IO` */
 lazy val catsInterop = crossProject(platforms: _*).crossType(CrossType.Pure).in(file("interop/cats")).dependsOn(core)
+  .settings(compatible)
   .settings(name := "okay-scala-cats",
     libraryDependencies ++= Seq("org.typelevel" %%% "cats-core" % "2.13.0", "org.typelevel" %%% "cats-effect" % "3.7.1",
       munit.value))
@@ -62,6 +75,7 @@ lazy val catsInterop = crossProject(platforms: _*).crossType(CrossType.Pure).in(
 /** INTEROP WITH TOFU: `WithLocal` of a `Reader`, `Errors` of a `Fail`, over cats' monad of the programs. The JVM's
  * only: tofu is not built for Scala.js or Scala Native */
 lazy val tofuInterop = (project in file("interop/tofu")).dependsOn(core.jvm, catsInterop.jvm)
+  .settings(compatible)
   .settings(name := "okay-scala-tofu", libraryDependencies ++= Seq("tf.tofu" %% "tofu-kernel" % "0.14.3",
     "org.scalameta" %% "munit" % "1.2.3" % Test))
 
