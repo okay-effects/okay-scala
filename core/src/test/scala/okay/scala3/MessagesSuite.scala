@@ -7,8 +7,8 @@ class MessagesSuite extends munit.FunSuite:
       import okay.scala3.std.*
       type R[X] = (State % Int + Async)[X]
       def p: Int ! R = State.get[Int, R]
-      State.run[Int, R, Async, Int](1)(p)""")
-    assert(error.contains("the row State % Int + Async without the effect State % Int is not Async"), error)
+      State.run[Int, R, Reader % String, Int](1)(p)""")
+    assert(error.contains("the row State % Int + Async without the effect State % Int is not Reader % String"), error)
   }
 
   test("a missing effect in a row of three") {

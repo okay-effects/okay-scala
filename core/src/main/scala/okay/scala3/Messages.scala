@@ -19,7 +19,8 @@ object Messages:
     val effects = r.replace("(", "").replace(")", "").split(" \\+ ").toSet
     if !effects(e) then report.errorAndAbort(s"the effect $e is not in the row $r")
     else report.errorAndAbort(s"the row $r without the effect $e is not ${written(TypeRepr.of[Rest])}: a handler " +
-      "leaves the row as it is written, its effect taken out — `Pure + B`, not `B`, if it was first")
+      "leaves the row as one would write it, its effect taken out, or as it is written — of `A + B` without `A`, `B` or " +
+      "`Pure + B`")
 
   /** a row or an effect as it is written: `+` and `%` for the lambdas they make, `Pure` for `Void` */
   def written(using Quotes)(t: quotes.reflect.TypeRepr): String =

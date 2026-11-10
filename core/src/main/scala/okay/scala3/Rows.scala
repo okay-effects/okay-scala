@@ -44,12 +44,37 @@ trait InMissing:
   /** no place found: the error says which effect and which row, as written */
   inline given missing[E[_], R[_]]: In[E, R] = ${ Messages.notIn[E, R] }
 
-object Split extends SplitMissing:
-  given found[E[_], R[_], Rest[_]](using at: Place[E, R, Rest]): Split[E, R, Rest] = at
+object Split extends SplitFound:
+  /** the row left as one would write it: `A + B` without `A` is `B` */
+  given natural[E[_], R[_], Rest[_]](using at: Natural[E, R, Rest]): Split[E, R, Rest] = at
+  def apply[E[_], R[_], Rest[_]](at: Place[E, R, Rest]): Split[E, R, Rest] = at
   extension [E[_], R[_], Rest[_]](s: Split[E, R, Rest]) def place: Place[E, R, Rest] = s
+
+trait SplitFound extends SplitMissing:
+  /** the row left as it is written, the effect taken out — `Pure + B` of `A + B`, where that is what is asked */
+  given found[E[_], R[_], Rest[_]](using at: Place[E, R, Rest]): Split[E, R, Rest] = Split(at)
 
 trait SplitMissing:
   inline given missing[E[_], R[_], Rest[_]]: Split[E, R, Rest] = ${ Messages.notSplit[E, R, Rest] }
+
+/**
+ * THE PLACE A HANDLER TAKES `E` FROM, the row left as one would write it: of `A + B` without `A`, `B` — not `Pure + B`;
+ * of `A + B + C` without `A`, `B + C`. Found before the place as it is written (`Split.found`), which is still what is
+ * found where that row is the one asked for.
+ */
+opaque type Natural[E[_], R[_], Rest[_]] <: Place[E, R, Rest] = Place[E, R, Rest]
+
+/** the last effect before the first of two, so that an effect twice in a row is taken at its last place, as ever */
+object Natural extends NaturalFirst:
+  given last[R[_], E[_]]: Natural[E, R + E, R] = Place.Last()
+  def apply[E[_], R[_], Rest[_]](at: Place[E, R, Rest]): Natural[E, R, Rest] = at
+
+trait NaturalFirst extends NaturalInit:
+  given first[E[_], G[_]]: Natural[E, E + G, G] = Natural(Place.First())
+
+trait NaturalInit:
+  given init[E[_], R[_], G[_], Rest[_]](using at: Natural[E, R, Rest]): Natural[E, R + G, Rest + G] =
+    Natural(Place.Init(at))
 
 /** a context bound: `def tick[R[_]: Has[State % Int]]: Int ! R` */
 type Has[E[_]] = [R[_]] =>> In[E, R]
@@ -99,6 +124,9 @@ enum Place[E[_], R[_], Rest[_]] extends At[E, R, Rest]:
   /** the empty effect, in every row: `Void`, of no operation. Where `Pure`'s places go when a program of no effect
    * is put into a row (`into`); an operation is never there */
   case Absurd[R[_]]() extends Place[Void, R, R]
+  /** the first effect of a row of two, the row without it the other effect, `G` — where `Init(Only())` leaves
+   * `Pure + G`. A handler's place (`Natural`); an operation is found at `Init(Only())`, and the two are one place */
+  case First[E[_], G[_]]() extends Place[E, E + G, G]
 
   def take[E2[_]](at: At[E2, R, ?]): Taken[E, E2, Rest] = Taken(this, at)
   override def outside[E2[_]](at: At[E2, R, ?]): At[E2, Rest, ?] | Null = Taken.outside(this, at)
@@ -139,6 +167,7 @@ trait SubMore extends SubOne:
     def apply[E2[_]](at: At[E2, R + E, ?]): At[E2, S, ?] = (at: @unchecked) match
       case _: Place.Last[r1, e1] => e.place
       case i: Place.Init[e2, r2, g, rest] => r(i.at)
+      case _: Place.First[e2, g] => r(Place.Only[e2]())
       case _: Place.Absurd[r] => Place.Absurd[S]()
 
 trait SubOne:
@@ -166,6 +195,7 @@ object Taken:
       case _: Place.Last[r, e] => (at: @unchecked) match
         case _: Place.Last[r2, e2] => null
         case i: Place.Init[e2, r2, g, rest] => i.at
+        case _: Place.First[e2, g] => Place.Only[e2]()
         case _: Place.Absurd[r2] => Place.Absurd()
       case _: Place.Only[e] => (at: @unchecked) match
         case _: Place.Only[e2] => null
@@ -175,6 +205,16 @@ object Taken:
         case j: Place.Init[e2, r2, g2, rest2] => (outside(i.at, j.at): @unchecked) match
           case null => null
           case q: Place[E2, rest, ?] @unchecked => Place.Init(q)
+        case _: Place.First[e2, g2] => (outside(i.at, Place.Only[e2]()): @unchecked) match
+          case null => null
+          case q: Place[E2, rest, ?] @unchecked => Place.Init(q)
+        case _: Place.Absurd[r2] => Place.Absurd()
+      case _: Place.First[e, g] => (at: @unchecked) match
+        case _: Place.First[e2, g2] => null
+        case _: Place.Last[r2, e2] => Place.Only[e2]()
+        case j: Place.Init[e2, r2, g2, rest2] => (j.at: @unchecked) match
+          case _: Place.Only[e3] => null
+          case _: Place.Absurd[r3] => Place.Absurd()
         case _: Place.Absurd[r2] => Place.Absurd()
       case _: Place.Absurd[r] => at
 
@@ -184,6 +224,7 @@ object Taken:
       case _: Place.Last[r, e] => (at: @unchecked) match
         case _: Place.Last[r2, e2] => Mine()
         case i: Place.Init[e2, r2, g, rest] => Theirs(i.at)
+        case _: Place.First[e2, g] => Theirs(Place.Only[e2]())
         case _: Place.Absurd[r2] => Theirs(Place.Absurd())
       case _: Place.Only[e] => (at: @unchecked) match
         case _: Place.Only[e2] => Mine()
@@ -194,6 +235,17 @@ object Taken:
           case _: Mine[e3, r3] => Mine()
           case t: Theirs[e3, e4, r4] => (t.at: @unchecked) match
             case q: Place[e4, r4, ?] @unchecked => Theirs(Place.Init(q))
+        case _: Place.First[e2, g2] => Taken(i.at, Place.Only[e2]()) match
+          case _: Mine[e3, r3] => Mine()
+          case t: Theirs[e3, e4, r4] => (t.at: @unchecked) match
+            case q: Place[e4, r4, ?] @unchecked => Theirs(Place.Init(q))
+        case _: Place.Absurd[r2] => Theirs(Place.Absurd())
+      case _: Place.First[e, g] => (at: @unchecked) match
+        case _: Place.First[e2, g2] => Mine()
+        case _: Place.Last[r2, e2] => Theirs(Place.Only[e2]())
+        case j: Place.Init[e2, r2, g2, rest2] => (j.at: @unchecked) match
+          case _: Place.Only[e3] => Mine()
+          case _: Place.Absurd[r3] => Theirs(Place.Absurd())
         case _: Place.Absurd[r2] => Theirs(Place.Absurd())
       case _: Place.Absurd[r] => Theirs(at)
 
