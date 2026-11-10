@@ -11,7 +11,11 @@ enum Choose[X]:
   /** the alternatives made since the mark dropped: the ways not yet tried there are not tried */
   case Cut(mark: Int) extends Choose[Unit]
 
-object Choose:
+/** `Choose.none[Int]`: the word, not yet placed in a row */
+trait ChooseWords:
+  def none[X]: Word[Choose, X] = word(Choose.Among(Nil))
+
+object Choose extends ChooseWords:
   def among[X, R[_]](xs: List[X])(using In[Choose, R]): X ! R = perform[Choose](Among(xs))
   def flip[R[_]](using In[Choose, R]): Boolean ! R = among(List(true, false))
   /** no value: this way gives nothing */

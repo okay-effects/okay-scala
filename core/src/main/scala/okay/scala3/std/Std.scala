@@ -13,7 +13,11 @@ enum State[S, X]:
   case Get[S]() extends State[S, S]
   case Put[S](s: S) extends State[S, Unit]
 
-object State:
+/** `State.get[Int]`: the word, not yet placed in a row â the row is the program's, known where it is used */
+trait StateWords:
+  def get[S]: Word[State % S, S] = word(State.Get())
+
+object State extends StateWords:
   def get[S, R[_]](using In[State % S, R]): S ! R = perform[State % S](Get())
   def put[S, R[_]](s: S)(using In[State % S, R]): Unit ! R = perform[State % S](Put(s))
   def modify[S, R[_]](f: S => S)(using In[State % S, R]): Unit ! R = get[S, R].flatMap(s => put(f(s)))
@@ -31,7 +35,11 @@ object State:
 enum Reader[E, X]:
   case Ask[E]() extends Reader[E, E]
 
-object Reader:
+/** `Reader.ask[String]`: the word, not yet placed in a row */
+trait ReaderWords:
+  def ask[E]: Word[Reader % E, E] = word(Reader.Ask())
+
+object Reader extends ReaderWords:
   def ask[E, R[_]](using In[Reader % E, R]): E ! R = perform[Reader % E](Ask())
 
   def run[E, R[_], Rest[_], A](env: E)(p: A ! R)(using Split[Reader % E, R, Rest]): A ! Rest =
@@ -91,7 +99,11 @@ object Fail:
 enum Abort[X]:
   case Exit[X]() extends Abort[X]
 
-object Abort:
+/** `Abort.exit[Int]`: the word, not yet placed in a row */
+trait AbortWords:
+  def exit[X]: Word[Abort, X] = word(Abort.Exit[X]())
+
+object Abort extends AbortWords:
   /** the program ended here, with no value */
   def exit[X, R[_]](using In[Abort, R]): X ! R = perform[Abort](Exit[X]())
 
