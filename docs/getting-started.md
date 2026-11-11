@@ -51,13 +51,14 @@ Run it where an effect is not handled, and it does not compile — the error nam
 
 ## 4. A handler
 
-A handler gives an effect its meaning. It is one of four shapes:
+A handler gives an effect its meaning. It is one of these shapes:
 
 | | |
 |---|---|
 | `Handler.general` | gets `k`, the rest of the program: resumes it once, many times, or never |
+| `Handler.control` | gets `k` as it is: resumes it, or leaves it with `k.unwind` — its finalizers (`ensuring`) run |
 | `Handler.tail` | answers in place: the program goes on at once |
-| `Handler.abort` | ends the program: the rest is dropped |
+| `Handler.abort` | ends the program: the rest is left — unwound, its finalizers run |
 | `Handler.stateful` | answers in place, with a state of its own in a `Cell` |
 
 Accounts kept in a map, answered in place:

@@ -65,14 +65,15 @@ object State:
   def put[S, R[_]](s: S)(using In[State % S, R]): Unit ! R = perform[State % S](Put(s))
 ```
 
-A handler is one of four shapes, each run its own way; a clause is a polymorphic function, and its match learns the
+A handler is one of these shapes, each run its own way; a clause is a polymorphic function, and its match learns the
 answer's type from the case:
 
 | | |
 |---|---|
 | `Handler.general(ret)(op)` | `op` gets the operation and `k`, the rest: resumed once, many times (multi-shot), or never |
+| `Handler.control(ret)(op)` | the same, `k` as it is: `k(x)` resumes it, `k.unwind` leaves it — its finalizers run, nothing else of it |
 | `Handler.tail(ret)(answer)` | answered in place: the body goes on at once, no `k` made |
-| `Handler.abort(ret)(abort)` | the rest dropped: the clause is the result, no `k` made |
+| `Handler.abort(ret)(abort)` | the rest left — unwound, its finalizers run: the clause is the result |
 | `Handler.stateful(init)(ret)(answer)` | answered in place with a state of its own, in a cell |
 
 Each method gives a `Handler`; the cases themselves (`Handler.General(ret, op)`, ...) are constructors too.
@@ -94,7 +95,7 @@ def run[S, R[_], Rest[_], A](init: S)(p: A ! R)(using Split[State % S, R, Rest])
 | `handle(p, h)` | `E` handled from wherever it is in the row |
 | `intercept(p, h)` | each operation of `E` to `h` first, then on to `E`'s handler outside: control and audit |
 | `observe(p)(see)`, `around(p)(f)` | each operation of `E` seen, or wrapped, then passed on: an audit trail, a trace, a change |
-| `ensuring(p)(release)`, `bracket(acquire)(use)(release)` | released when the program ends, or when a failure drops it |
+| `ensuring(p)(release)`, `bracket(acquire)(use)(release)` | `release`, a program of the row or a thunk, run when `p` is left: it ends, or a handler unwinds it — a failure, a choice of nothing, a generator cut, a fiber cancelled ([design](docs/design.md#leaving-ensuring-and-unwind)) |
 | `p.into[S]`, `split(p)` | into a bigger row; an effect to the end of the row |
 | `run(p)` | a program of no effect, run |
 
@@ -119,7 +120,7 @@ The standard effects, in `okay.scala3.std`:
 | `Log` | `debug`, `info`, `warn`, `error` | `Log.collect(least)`, `Log.to(sink, least)` |
 | `Async` | `fromFuture`, `async`, `cancellable`, `sleep`, `blocking`, `never`, `fork` (a `Fiber`: `join`, `cancel`), `both`, `parTraverse`, `race`, `timeout` | `Async.toFuture`, `Async.start` |
 | `Sync` (side effects) | `delay`, `attempt` | `Sync.run`: in place; `Sync.on(pool)`: each on a pool, through `Async` |
-| `Scope` (resources, fibers) | `acquire(a)(release)`, `defer(release)`, `fork` | `Scope.run`: all released at its end, the last first; its fibers cancelled |
+| `Scope` (resources, fibers) | `acquire(a)(release)`, `defer(release)`, `fork` | `Scope.run`: all released when it is left, the last first; its fibers cancelled |
 
 Beside them, with no effect of their own:
 

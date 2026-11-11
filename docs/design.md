@@ -9,9 +9,9 @@ it: what Scala 2 made okay-simple give up is taken back, and nothing is kept tha
 |---|---|
 | `Rows.scala` | the rows (`+`, `%`, `Void`), places (`Place`, `At`, `Taken`, `Escape`), `In`, `Split` (`Split.Natural`), `Sub` |
 | `Prog.scala` | the language: `!`, `Prog` (the machine's C), its words, from `pure` to `run`; `Word`, `word`; in `Prog`'s companion the evidence of a bind, `Prog.Fits` and `Prog.Known` |
-| `Handler.scala` | `Handler`, its four shapes and their makers, `Cell`; `fresh` and `ret` |
-| `Frames.scala` | K in its parts — `Frames` (σ), `Levels` (κ), `Crossed` — with `released` and `put` |
-| `Cek.scala` | the machine's steps alone: `steps`, `enter`, `leave`, `out`, `here`, `inPlace`, `run` |
+| `Handler.scala` | `Handler`, its shapes and their makers, `Cell`; `Continuation`, the rest as a clause is given it; `fresh` and `ret` |
+| `Frames.scala` | K in its parts — `Frames` (σ), `Levels` (κ), `Crossed` — with `put`, `putLeft` and `holds` |
+| `Cek.scala` | the machine's steps alone: `steps`, `enter`, `leave`, `out`, `here`, `inPlace`, `walk`, `run` |
 | `Messages.scala` | the macro that says what effect a program lacks |
 | `Branches.scala` | the macro that places each branch of an `if` or a `match` that is bound |
 | `std/` | `okay.scala3.std`: the standard effects, their words and handlers — `Std`, `Choose`, `Services`, `Async`, `Sync`, `Concurrent` (`Ref`, `Deferred`, `Semaphore`, `Queue`), `Retry`, `Scope`, `Stream`, ... |
@@ -106,7 +106,7 @@ Multi-shot needs no copying: σ and κ are immutable data, so resuming `k` twice
 mutable thing, a stateful handler's cell, is given afresh — from the state it has then — each time its handler is
 installed or put back by a `k`: so a state inside a choice is each branch's, one outside it threads through them.
 
-## Handlers: four shapes, polymorphic clauses
+## Handlers: their shapes, polymorphic clauses
 
 ```scala
 enum Handler[E[_], R[_], A, B]:
@@ -114,22 +114,64 @@ enum Handler[E[_], R[_], A, B]:
   case Tail(ret: A => B ! R, answer: [X] => E[X] => X)
   case Abort(ret: A => B ! R, abort: [X] => E[X] => B ! R)
   case Stateful[...](cell: Cell[S], ret: (S, A) => B ! R, answer: [X] => (E[X], Cell[S]) => X)
+  case Control(ret: A => B ! R, op: [X] => (E[X], Continuation[X, R, B]) => B ! R)
+  case Kept(h: Handler[E, R, A, B], at: At[E, R, ?])
 ```
 
 A clause is a polymorphic function, `[X] => (op: State[S, X]) => op match ...`, and its match learns `X` from each case.
 The shape tells the machine what it may skip: a `Tail` or `Stateful` operation is answered where it is, no `k` made, the
-answer straight into the next frame; an `Abort` drops the rest with no `k`; only a `General` handler makes one.
+answer straight into the next frame; an `Abort` leaves the rest, and makes nothing for one that holds no finalizer;
+a `General` or a `Control` handler is given `k` — as a function, or as it is: a `Continuation`, to resume or to unwind.
+`Kept` is what `intercept` installs, its handler with the place its effect is kept at.
 
-## Resources: released when the rest is dropped
+## Leaving: `ensuring` and `unwind`
 
-`ensuring(p)(release)` puts a frame on σ, `Finally`: a value passing it runs `release`. A handler that aborts — its
-shape says it, `Abort` (`Fail`, `Abort`) — drops the rest as data the machine holds: the frames inside, the levels
-crossed, each level's frames outside it. So the machine runs their `release`s, innermost first, before the clause.
+`ensuring(p)(release)` is `p` with a finalizer, run when `p` is left: `p` ends with a value, or a handler outside it
+unwinds the `k` that `p` is waiting in. The finalizer is a program of the same row, made when it runs — it reads a
+state, emits, asks any effect of its row — or a thunk, a program that asks nothing. `bracket` is `ensuring` of the use.
 
-A general handler drops the rest by not calling `k`, and that the machine cannot see: `k` is a function, never
-called. So a `release` inside a way a `Choose` drops, or past what `Yield.take` took, does not run; and one inside a
-`k` resumed twice runs at each end. A resource held across a general handler's operations needs that handler's own
-care.
+1. **A value.** `p` ends with `x`: the finalizer runs, its value is dropped, and `x` is the result.
+2. **Unwinding.** `k.unwind` runs the finalizers waiting in `k`, the innermost first, and nothing else of `k`: no
+   function of a bind, no value clause of a handler inside `k`; the states in place inside `k` are dropped. Then `()`.
+3. **Where a finalizer runs.** Where it was installed: the handlers of `k` between it and the one that unwinds answer
+   it, a handler in place from the state `k` holds; the handlers outside answer it too.
+4. **The handler that unwinds has left.** It answers no operation of a finalizer. One of its own effect goes to the
+   handler outside under `intercept`; under `handle` nobody answers it: that finalizer ends there, a finalizer
+   waiting inside it still runs, and the unwinding goes on.
+5. **A finalizer that is itself left** — it fails — is left as any program is. At a value, the value that waited is
+   dropped and the failure's handler has the result. In an unwinding, with its handler outside the one that unwinds:
+   the finalizers still waiting run, and this handler's result stands. With its handler inside what is unwound: the
+   failure is answered there, the handler's result dropped, and the unwinding goes on.
+6. **`k` is a value.** Nothing is remembered of what was done with it. Unwound twice, its finalizers run twice;
+   resumed after, its path runs and they run again at its end; each starts from the states in place as `k` took them.
+7. **What runs nothing.** A clause that neither resumes nor unwinds `k` (`Handler.general` not calling it, a
+   `Control.shift` that drops it); a generator kept in a stream that is not pulled to its end (`Stream.generated`);
+   a throw of the host out of the run.
+8. **Refused.** A handler inside the part unwound keeps the `k` of a finalizer's operation and resumes it on another
+   stack: the finalizer ends, and there is no unwinding to go on with — `NoUnwinding`.
+
+Who unwinds: `Handler.abort` — the machine does it, so `Fail`, `Abort`, `Retry` between its runs; `Choose` at a choice
+of nothing (`none`, `guard`); `Yield.take` at its cut; `Lift` at a value that gives the rest none (a `None`, a `Left`);
+`Async` when a wait fails or the run is cancelled (`cancel`, the loser of a `race`, a `timeout`, a fiber of a `Scope`
+that ended) — there on the thread that leaves it, a finalizer that waits ending at its wait. `Scope.run` is `ensuring`
+of its releases, kept as its handler's state: each path of a program resumed twice releases its own. A stream's
+`release`, a thunk, is still what its own combinators call when they leave it unpulled (`take`, `headOption`, `zip`);
+a pull that is left runs it through `ensuring`.
+
+In the machine a finalizer is a frame on σ, `Finally`: a value that comes to it waits while the finalizer runs. A `k`
+unwound (`Prog.Unwind`) is put back as it is resumed, each level's frames outside it under a frame `Unwinding`, and
+without its handler: where that was is a level that answers nothing, `Gone`, over the end of the unwinding, `Unwound`.
+Then `walk` passes the frames with no value: a bind's is dropped, a finalizer's runs its finalizer and comes back to
+`Unwinding`, a level is left without its value clause. A rest that holds no finalizer is not walked: it is data, so
+`holds` knows.
+
+## Calls in tail position from row to row
+
+A program put into another row (`into`, a bind of a smaller row) runs under a level that renames its operations'
+places. In tail position — no frame waits for its value — under such a level, it gets none of its own: that one
+renames for both, by the two renamings as one (`Sub.composed`), each place of the row taken to its place outside
+once, so the renaming stays as big as the row. `ping` calling `pong.into` calling `ping.into`, a million times, keeps
+one level; each call used to keep one, and every operation passed them all.
 
 ## Inline, and the one macro
 
