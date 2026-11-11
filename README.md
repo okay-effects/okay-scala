@@ -204,8 +204,9 @@ limit: with effects that do not commute, `flatMapIn(flatMapIn(xs)(k))(h)` runs e
 first), and `flatMapIn(xs)(x => k(x).flatMap(flatMapIn(_)(h)))` each `k` with its `h`s (depth first). `Lift.handle`
 always makes the second: its `k` is the whole rest of the program.
 
-`lower` binds in `G`, each operation's rest run inside the bind: for a strict monad (`Option`, `Either`) that nests a
-run per operation, so a long program of one is handled in place instead, `run(Lift.handle[G](p))`, in constant stack.
+`lower` binds in `G`, each operation's rest run inside the bind. A value its monad already holds (a `Some`, a
+`Right`, a `Success`) goes on in the machine instead, so a long program over `Option`, `Either` or `Try` runs in
+constant stack; for another strict monad a long program is handled in place, `run(Lift.handle[G](p))`.
 
 `Lift.via(nt)` replaces each `Lifted[G]` operation by the `Lifted[H]` one `nt` makes, in the row already: a `Try` as a
 `Future`, an `Option` as an `Either`; `okay-scala-cats` gives `IOs.toFuture` (an `IO` as a `Future`, on an
