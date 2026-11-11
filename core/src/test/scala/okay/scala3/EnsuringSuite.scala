@@ -83,7 +83,8 @@ class EnsuringSuite extends munit.FunSuite:
   }
 
   test("ensuring, every path of a choice: a finalizer before the choice runs once for each path that passes it") {
-    val chosen: Int ! Choose = Choose.among[Int, Choose](List(1, 2, 3)).flatMap(x => said[Choose](s"path $x").map(_ => x))
+    val chosen: Int ! Choose =
+      Choose.among[Int, Choose](List(1, 2, 3)).flatMap(x => said[Choose](s"path $x").map(_ => x))
     val p: Int ! Choose =
       ensuring(chosen)(said("closed")).flatMap(x => if x == 2 then Choose.none[Int, Choose] else pure(x))
     val told = List("path 1", "closed", "path 2", "closed", "path 3", "closed")

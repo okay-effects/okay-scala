@@ -13,9 +13,9 @@ class Cell[S](var state: S):
 
 /**
  * THE REST OF A PROGRAM, as a handler's clause is given it: `k`. A function — `k(x)` is the program that RESUMES it
- * with the answer `x` — and `k.unwind` is the program that LEAVES it: the finalizers that wait in it (`ensuring`) run,
- * the innermost first, each where it was installed, and nothing else of it does; then `()`. The handler that unwinds
- * has left: an operation of its own that a finalizer asks then is not answered by it — it goes to the handler
+ * with the answer `x` — and `k.unwind` is the program that LEAVES it: the finalizers that wait in it (`ensuring`)
+ * run, the innermost first, each where it was installed, and nothing else of it does; then `()`. The handler that
+ * unwinds has left: an operation of its own that a finalizer asks then is not answered by it — it goes to the handler
  * outside, if this one kept its effect in the row (`intercept`), and else the finalizer ends there. `k` is a value,
  * and nothing is remembered of what was done with it: every resumption is a path, which runs its finalizers at its
  * end, and every unwinding is the end of a path — unwound twice, the finalizers run twice. A clause that neither
@@ -48,7 +48,7 @@ enum Handler[E[_], R[_], A, B]:
   case General(ret: A => B ! R, op: [X] => (E[X], X => B ! R) => B ! R)
   /** an operation ANSWERED IN PLACE: the body goes on at once, no `k` made */
   case Tail(ret: A => B ! R, answer: [X] => E[X] => X)
-  /** an operation ABORTS: the rest is left — unwound, its finalizers run — and its clause is the handler's result */
+  /** an operation ABORTS: the rest is left — unwound, its finalizers run — its clause the handler's result */
   case Abort(ret: A => B ! R, abort: [X] => E[X] => B ! R)
   /** answered in place with a state of its own, `cell`: each time the handler is installed, or a `k` taken further
    * out resumes it, the machine gives it a cell of its own, from the state of its time */
