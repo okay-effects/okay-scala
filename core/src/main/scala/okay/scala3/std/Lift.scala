@@ -18,19 +18,25 @@ type Lifted[G[_]] = [X] =>> Lift[G, X]
 trait Lowering[G[_]]:
   def pure[A](a: A): G[A]
   def flatMap[A, B](ga: G[A])(f: A => G[B]): G[B]
+  /** `ga` gives the rest of the program no value — a `None`, a `Left`: the rest is left, and unwound first
+   * (`ensuring`). Not known of a monad unless it says so: then the rest is kept, as its bind keeps it */
+  def leaves[A](ga: G[A]): Boolean = false
 
 object Lowering:
   given Lowering[Option] with
     def pure[A](a: A): Option[A] = Some(a)
     def flatMap[A, B](ga: Option[A])(f: A => Option[B]): Option[B] = ga.flatMap(f)
+    override def leaves[A](ga: Option[A]): Boolean = ga.isEmpty
 
   given either[E]: Lowering[[A] =>> Either[E, A]] with
     def pure[A](a: A): Either[E, A] = Right(a)
     def flatMap[A, B](ga: Either[E, A])(f: A => Either[E, B]): Either[E, B] = ga.flatMap(f)
+    override def leaves[A](ga: Either[E, A]): Boolean = ga.isLeft
 
   given Lowering[Try] with
     def pure[A](a: A): Try[A] = scala.util.Success(a)
     def flatMap[A, B](ga: Try[A])(f: A => Try[B]): Try[B] = ga.flatMap(f)
+    override def leaves[A](ga: Try[A]): Boolean = ga.isFailure
 
   given future(using ExecutionContext): Lowering[Future] with
     def pure[A](a: A): Future[A] = Future.successful(a)
@@ -54,6 +60,9 @@ type ~>[G[_], H[_]] = [X] => G[X] => H[X]
 trait Distributes[G[_]]:
   def pure[A](a: A): G[A]
   def flatMapIn[A, B, R[_]](ga: G[A])(k: A => G[B] ! R): G[B] ! R
+  /** `ga` gives `k` no value — a `None`, a `Left`, an empty list: the rest of the program is left, and unwound
+   * first (`ensuring`) */
+  def leaves[A](ga: G[A]): Boolean = false
 
 object Distributes:
   given Distributes[Option] with
@@ -61,18 +70,21 @@ object Distributes:
     def flatMapIn[A, B, R[_]](ga: Option[A])(k: A => Option[B] ! R): Option[B] ! R = ga match
       case Some(a) => k(a)
       case None => okay.scala3.pure(None)
+    override def leaves[A](ga: Option[A]): Boolean = ga.isEmpty
 
   given either[E]: Distributes[[A] =>> Either[E, A]] with
     def pure[A](a: A): Either[E, A] = Right(a)
     def flatMapIn[A, B, R[_]](ga: Either[E, A])(k: A => Either[E, B] ! R): Either[E, B] ! R = ga match
       case Right(a) => k(a)
       case Left(e) => okay.scala3.pure(Left(e))
+    override def leaves[A](ga: Either[E, A]): Boolean = ga.isLeft
 
   given Distributes[Try] with
     def pure[A](a: A): Try[A] = Success(a)
     def flatMapIn[A, B, R[_]](ga: Try[A])(k: A => Try[B] ! R): Try[B] ! R = ga match
       case Success(a) => k(a)
       case Failure(e) => okay.scala3.pure(Failure(e))
+    override def leaves[A](ga: Try[A]): Boolean = ga.isFailure
 
   /** `k` over the elements in order, in a loop — constant stack — what each gave concatenated; immutable, so a `k`
    * resumed twice by a handler outside (a `Choose`) goes on from the same elements */
@@ -80,10 +92,12 @@ object Distributes:
     def pure[A](a: A): List[A] = List(a)
     def flatMapIn[A, B, R[_]](ga: List[A])(k: A => List[B] ! R): List[B] ! R =
       traverse(ga, k).map(_.toList)
+    override def leaves[A](ga: List[A]): Boolean = ga.isEmpty
 
   given Distributes[Vector] with
     def pure[A](a: A): Vector[A] = Vector(a)
     def flatMapIn[A, B, R[_]](ga: Vector[A])(k: A => Vector[B] ! R): Vector[B] ! R = traverse(ga.toList, k)
+    override def leaves[A](ga: Vector[A]): Boolean = ga.isEmpty
 
   private def traverse[A, B, R[_]](as: List[A], k: A => IterableOnce[B] ! R): Vector[B] ! R =
     loop[(List[A], Vector[B]), Vector[B], R]((as, Vector.empty)):
@@ -103,9 +117,11 @@ object Lift:
   def lower[G[_], R[_], A](p: A ! R)(using at: Split[Lifted[G], R, Pure], G: Lowering[G]): G[A] = lowered(p)
 
   private def lowered[G[_], R[_], A](p: A ! R)(using at: Split[Lifted[G], R, Pure], G: Lowering[G]): G[A] =
-    run(okay.scala3.handle(p, Handler.general[Lifted[G], Pure, A, G[A]](a => pure(G.pure(a)))(
-      [X] => (op: Lift[G, X], k: X => G[A] ! Pure) => op match
-        case Of(ga) => pure(G.flatMap(ga)(x => run(k(x)))))))
+    run(okay.scala3.handle(p, Handler.control[Lifted[G], Pure, A, G[A]](a => pure(G.pure(a)))(
+      [X] => (op: Lift[G, X], k: Continuation[X, Pure, G[A]]) => op match
+        case Of(ga) =>
+          if G.leaves(ga) then k.unwind.map(_ => G.flatMap(ga)(x => run(k(x))))
+          else pure(G.flatMap(ga)(x => run(k(x)))))))
 
   /** `Lifted[G]` HANDLED IN PLACE, the rest of the row kept: each lifted `G[X]` bound by `G`'s distributive law to the
    * rest of the program — so any number of data monads are handled one after another, the last, a `Future` or an
@@ -114,9 +130,9 @@ object Lift:
 
   final class Handling[G[_]]:
     def apply[R[_], Rest[_], A](p: A ! R)(using at: Split[Lifted[G], R, Rest], G: Distributes[G]): G[A] ! Rest =
-      okay.scala3.handle(p, Handler.general[Lifted[G], Rest, A, G[A]](a => pure(G.pure(a)))(
-        [X] => (op: Lift[G, X], k: X => G[A] ! Rest) => op match
-          case Of(ga) => G.flatMapIn(ga)(k)))
+      okay.scala3.handle(p, Handler.control[Lifted[G], Rest, A, G[A]](a => pure(G.pure(a)))(
+        [X] => (op: Lift[G, X], k: Continuation[X, Rest, G[A]]) => op match
+          case Of(ga) => if G.leaves(ga) then k.unwind.flatMap(_ => G.flatMapIn(ga)(k)) else G.flatMapIn(ga)(k)))
 
   /** each `Lifted[G]` operation REPLACED by the `Lifted[H]` one `nt` makes, `Lifted[H]` in the row already: several
    * base monads brought to one, to lower — `Lift.via[Try, Future]([X] => (t: Try[X]) => Future.fromTry(t))(p)` */

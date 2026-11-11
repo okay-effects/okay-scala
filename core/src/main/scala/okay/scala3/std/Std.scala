@@ -76,7 +76,7 @@ object Writer:
   private def tellAll[W, R[_]](ws: List[W])(using In[Writer % W, R]): Unit ! R =
     ws.foldLeft(unit[R])((p, w) => p.andThen(tell[W, R](w)))
 
-/** failure with an error of type `E`: the rest of the program dropped */
+/** failure with an error of type `E`: the rest of the program left — unwound, its finalizers run (`ensuring`) */
 enum Fail[E, X]:
   case Raise[E](e: E) extends Fail[E, Nothing]
 
@@ -88,14 +88,14 @@ object Fail:
     handle(p, Handler.abort[Fail % E, Rest, A, Either[E, A]](a => pure(Right(a)))([X] => (op: Fail[E, X]) => op match
       case Raise(e) => pure(Left(e))))
 
-  /** the value, or `h` of what was raised, in its place: the rest dropped, `h` in the row without this `Fail` — so
-   * one raised there goes to the next handler of it */
+  /** the value, or `h` of what was raised, in its place: the rest left, `h` in the row without this `Fail` — so
+   * one raised there goes to the next handler of it. `h` is the handler's own clause: a failure of a finalizer,
+   * raised while a handler outside unwinds this one, is answered by it there */
   def recover[E, R[_], Rest[_], A](p: A ! R)(h: E => A ! Rest)(using Split[Fail % E, R, Rest]): A ! Rest =
-    run[E, R, Rest, A](p).flatMap:
-      case Right(a) => pure(a)
-      case Left(e) => h(e)
+    handle(p, Handler.abort[Fail % E, Rest, A, A](pure)([X] => (op: Fail[E, X]) => op match
+      case Raise(e) => h(e)))
 
-/** an early end with no value: the rest dropped, `optional` giving `None` */
+/** an early end with no value: the rest left — unwound — `optional` giving `None` */
 enum Abort[X]:
   case Exit[X]() extends Abort[X]
 
@@ -129,13 +129,14 @@ object Yield:
     handle(p, Handler.general[Yield % O, Rest, A, A](pure)([X] => (op: Yield[O, X], k: X => A ! Rest) => op match
       case Emit(o) => f(o).flatMap(k)))
 
-  /** the first `n` values, and the program's value if it ended by then: stopped at the value after them */
+  /** the first `n` values, and the program's value if it ended by then: stopped at the value after them, and left
+   * there — unwound (`ensuring`); what a finalizer emits then nobody takes, and it ends there */
   def take[O, R[_], Rest[_], A](n: Int)(p: A ! R)(using Split[Yield % O, R, Rest]): (List[O], Option[A]) ! Rest =
     // the handler's value: a program given how many are still to take, and those taken, reversed
     type Go = (Int, List[O]) => (List[O], Option[A]) ! Rest
-    handle(p, Handler.general[Yield % O, Rest, A, Go](a => pure((_, taken) => pure((taken.reverse, Some(a)))))(
-      [X] => (op: Yield[O, X], k: X => Go ! Rest) => op match
+    handle(p, Handler.control[Yield % O, Rest, A, Go](a => pure((_, taken) => pure((taken.reverse, Some(a)))))(
+      [X] => (op: Yield[O, X], k: Continuation[X, Rest, Go]) => op match
         case Emit(o) => pure[Go, Rest]((left, taken) =>
-          if left <= 0 then pure((taken.reverse, None))
+          if left <= 0 then k.unwind.map(_ => (taken.reverse, None))
           else k(()).flatMap(go => go(left - 1, o :: taken)))))
       .flatMap(go => go(n, Nil))

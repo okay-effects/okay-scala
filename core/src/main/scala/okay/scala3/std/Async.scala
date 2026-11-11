@@ -13,8 +13,8 @@ import scala.util.{Failure, Success, Try}
 enum Async[X]:
   case Suspend[X](register: (Either[Throwable, X] => Unit) => (() => Unit)) extends Async[X]
 
-/** a program running: its value to come, and how to cancel it — the wait it is in cancelled, the rest never run, the
- * future failed with [[Cancelled]] */
+/** a program running: its value to come, and how to cancel it — the wait it is in cancelled, the rest left: never
+ * run, its finalizers run (`ensuring`); the future failed with [[Cancelled]] */
 final class Running[A](val future: Future[A], cancelling: () => Unit):
   def cancel(): Unit = cancelling()
 
@@ -23,7 +23,7 @@ final class Fiber[A](val running: Running[A]):
   /** its value when it ends; its failure, or `Cancelled`, failing the program that waits. Cancelling the wait does not
    * cancel the fiber */
   def join[R[_]](using In[Async, R]): A ! R = Async.fromFuture(running.future)
-  /** the fiber cancelled: the wait it is in cancelled, its rest never run */
+  /** the fiber cancelled: the wait it is in cancelled, its rest left — never run, its finalizers run */
   def cancel[R[_]]: Unit ! R = defer(pure(running.cancel()))
 
 /** what a cancelled program's future fails with */
@@ -34,6 +34,11 @@ final class Cancelled extends RuntimeException("cancelled")
  * its next wait, registers the callback, and when it is called resumes the rest on the execution context, until it is
  * done: a `Future` of its value, failed if a callback gave a failure or the program threw. A program's other effects
  * are handled first, its row then `Async` alone. On every platform; `sleep` by the platform's timer.
+ *
+ * A PROGRAM THAT WAITS IS KEPT, and its finalizers (`ensuring`) run when it ends. One that will not go on is LEFT —
+ * its wait failed, or it was cancelled (`cancel`, the loser of a `race`, a `timeout`, a fiber of a `Scope` that
+ * ended): its finalizers run then, on the thread that leaves it, each up to its first wait. A throw out of the
+ * program runs none.
  */
 object Async:
   /** an operation answered by a callback, called once; it cannot be cancelled */
@@ -148,7 +153,7 @@ object Async:
       [X] => (op: Async[X], k: X => Waiting[A] ! Pure) => op match
         case Suspend(register) => pure(Waiting.Suspended(register, k))))
 
-  /** a run's state: cancelled or not, and how to cancel the wait it is in */
+  /** a run's state: cancelled or not, and what a cancel does to the wait it is in */
   private final class Run:
     @volatile var cancelled = false
     val waiting = AtomicReference[() => Unit](noCancel)
@@ -161,17 +166,34 @@ object Async:
       waiting.set(c)
       if cancelled then waiting.getAndSet(noCancel)()
 
-  /** the slot's mark: `register` returned before its callback was called */
+  /** the slot's marks: `register` returned before its callback was called; and the wait cancelled before it was */
   private object Later extends RuntimeException("later", null, false, false)
   private val later: Either[Throwable, Nothing] = Left(Later)
+  private val left: Either[Throwable, Nothing] = Left(Later)
+
+  /** THE REST LEFT, the run failed with `e`: a wait that failed, or was cancelled. Its finalizers run (`ensuring`),
+   * here and now, each up to its first wait — `Async`'s handler has left, and nobody answers one. A finalizer that
+   * throws fails the run with what it threw */
+  private def leave[A, X](k: X => Waiting[A] ! Pure, e: Throwable, done: Promise[A]): Unit =
+    try k match
+      // the rest as the machine gives it: `Waiting` keeps it as the function it was in 0.1.1, for its bytecode
+      case rest: Continuation[X, Pure, Waiting[A]] => okay.scala3.run(rest.unwind)
+      case _ => ()
+    catch case NonFatal(thrown) => done.tryFailure(thrown)
+    done.tryFailure(e)
+
+  /** the rest resumed with its answer; a run cancelled meanwhile leaves it */
+  private def resume[A, X](k: X => Waiting[A] ! Pure, x: X, done: Promise[A], run: Run)(
+    using ExecutionContext): Unit =
+    if run.cancelled then leave(k, Cancelled(), done) else drive(k(x), done, run)
 
   /** a loop: a callback called while `register` runs — a future already done — is taken here and the loop goes on;
-   * one called later resumes the rest on the execution context. Which of the two, one `compareAndSet` decides; a run
-   * cancelled goes no further */
+   * one called later resumes the rest on the execution context. A wait is settled once — by its callback, or by the
+   * run's cancel, which leaves the rest: one `compareAndSet` of its slot decides which */
   private def drive[A](p: Waiting[A] ! Pure, done: Promise[A], run: Run)(using ec: ExecutionContext): Unit =
     var next: Option[Waiting[A] ! Pure] = Some(p)
     try
-      while next.isDefined && !run.cancelled do
+      while next.isDefined do
         val now = next.get
         next = None
         okay.scala3.run(now) match
@@ -179,14 +201,18 @@ object Async:
           case s: Waiting.Suspended[a, x] =>
             val slot = AtomicReference[Either[Throwable, x]](null)
             val cancel = s.register { r =>
-              if !slot.compareAndSet(null, r) && !run.cancelled then
+              if !slot.compareAndSet(null, r) && slot.compareAndSet(later, r) then
                 run.waiting.set(noCancel)
                 r match
-                  case Right(x) => ec.execute(() => drive(s.k(x), done, run))
-                  case Left(e) => done.tryFailure(e)
+                  case Right(x) => ec.execute(() => resume(s.k, x, done, run))
+                  case Left(e) => leave(s.k, e, done)
             }
-            if slot.compareAndSet(null, later) then run.waitingOn(cancel)
+            if slot.compareAndSet(null, later) then run.waitingOn { () =>
+              if slot.compareAndSet(later, left) then
+                cancel()
+                leave(s.k, Cancelled(), done)
+            }
             else slot.get match
-              case Right(x) => next = Some(s.k(x))
-              case Left(e) => done.tryFailure(e)
+              case Right(x) => if run.cancelled then leave(s.k, Cancelled(), done) else next = Some(s.k(x))
+              case Left(e) => leave(s.k, e, done)
     catch case NonFatal(e) => done.tryFailure(e)

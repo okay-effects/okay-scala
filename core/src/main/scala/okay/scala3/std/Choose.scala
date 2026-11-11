@@ -3,7 +3,8 @@ package okay.scala3.std
 import okay.scala3.*
 
 /** A CHOICE among values: its handlers resume the rest once for each — MULTI-SHOT — the alternatives not yet tried
- * kept as data, so a `cut` can drop them */
+ * kept as data, so a `cut` can drop them. A choice of nothing leaves the rest: it is unwound (`ensuring`); an
+ * alternative dropped was not begun, and holds nothing */
 enum Choose[X]:
   case Among[X](xs: List[X]) extends Choose[X]
   /** the alternatives pending now: where a `cut` goes back to */
@@ -49,13 +50,13 @@ object Choose extends ChooseWords:
     type F = List[A] => List[A] ! Rest
     type Go = Pending[F] => F
     val done: F = found => okay.scala3.pure(found.reverse)
-    def ways[X](xs: List[X], k: X => Go ! Rest, pending: Pending[F]): F = xs match
-      case Nil => pending.back(done)
+    def ways[X](xs: List[X], k: Continuation[X, Rest, Go], pending: Pending[F]): F = xs match
+      case Nil => if k.holds then found => k.unwind.flatMap(_ => pending.back(done)(found)) else pending.back(done)
       case x :: Nil => found => k(x).flatMap(go => go(pending)(found))
       case x :: more => found => k(x).flatMap(go => go(pending.push(below => ways(more, k, below)))(found))
     val value = (a: A) => okay.scala3.pure[Go, Rest](pending => found => pending.back(done)(a :: found))
-    handle(p, Handler.general[Choose, Rest, A, Go](value)(
-      [X] => (op: Choose[X], k: X => Go ! Rest) => op match
+    handle(p, Handler.control[Choose, Rest, A, Go](value)(
+      [X] => (op: Choose[X], k: Continuation[X, Rest, Go]) => op match
         case Among(xs) => okay.scala3.pure[Go, Rest](pending => ways(xs, k, pending))
         case Mark() =>
           okay.scala3.pure[Go, Rest](pending => found => k(pending.depth).flatMap(go => go(pending)(found)))
@@ -68,12 +69,12 @@ object Choose extends ChooseWords:
     type F = Option[A] ! Rest
     type Go = Pending[F] => F
     val done: F = okay.scala3.pure(None)
-    def ways[X](xs: List[X], k: X => Go ! Rest, pending: Pending[F]): F = xs match
-      case Nil => pending.back(done)
+    def ways[X](xs: List[X], k: Continuation[X, Rest, Go], pending: Pending[F]): F = xs match
+      case Nil => if k.holds then k.unwind.flatMap(_ => pending.back(done)) else pending.back(done)
       case x :: Nil => k(x).flatMap(go => go(pending))
       case x :: more => k(x).flatMap(go => go(pending.push(below => ways(more, k, below))))
-    handle(p, Handler.general[Choose, Rest, A, Go](a => okay.scala3.pure(_ => okay.scala3.pure(Some(a))))(
-      [X] => (op: Choose[X], k: X => Go ! Rest) => op match
+    handle(p, Handler.control[Choose, Rest, A, Go](a => okay.scala3.pure(_ => okay.scala3.pure(Some(a))))(
+      [X] => (op: Choose[X], k: Continuation[X, Rest, Go]) => op match
         case Among(xs) => okay.scala3.pure[Go, Rest](pending => ways(xs, k, pending))
         case Mark() => okay.scala3.pure[Go, Rest](pending => k(pending.depth).flatMap(go => go(pending)))
         case Cut(m) => okay.scala3.pure[Go, Rest](pending => k(()).flatMap(go => go(pending.cutTo(m))))))

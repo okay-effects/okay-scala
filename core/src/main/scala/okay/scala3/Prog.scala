@@ -1,6 +1,7 @@
 package okay.scala3
 
 import scala.annotation.targetName
+import scala.util.NotGiven
 import scala.language.implicitConversions
 
 /** a program of the value `A` over the row `R`: `Int ! Reader % String + State % Int` */
@@ -8,7 +9,7 @@ infix type ![+A, R[_]] = Prog[R, A]
 
 /**
  * A PROGRAM: data, run by the machine (`Cek`). Its own cases are the words below — `pure`, `flatMap`, `map`,
- * `defer`, `perform`, `handle`, `into`; `Resume` is a `k` resumed, made by the machine only.
+ * `defer`, `perform`, `handle`, `into`; `Resume` is a `k` resumed and `Unwind` a `k` left, made by the machine only.
  */
 enum Prog[R[_], +A]:
   case Value[R[_], A](a: A) extends Prog[R, A]
@@ -24,11 +25,15 @@ enum Prog[R[_], +A]:
     extends Prog[Rest, B]
   /** `p` in another row, its places renamed */
   case Remap[R1[_], R2[_], A](p: Prog[R1, A], rename: Sub[R1, R2]) extends Prog[R2, A]
-  /** `p`, and `release` when it ends, or when a handler aborting drops it (`ensuring`) */
-  case Ensure[R[_], A](p: Prog[R, A], release: () => Unit) extends Prog[R, A]
+  /** `p`, and `release` when it is left, with its value or unwound (`ensuring`): a program of the row, made when
+   * it is run, or a thunk */
+  case Ensure[R[_], A](p: Prog[R, A], release: () => Prog[R, Any] | Unit) extends Prog[R, A]
   /** `k` resumed with `x`: the frames inside and the levels crossed put back, under the general handler `h` */
   case Resume[Rest[_], X, B, R0[_], V0, E[_], R[_], A](inner: Frames[R0, X, V0], crossed: Crossed[R0, V0, R, A],
                                                        at: At[E, R, Rest], h: Handler[E, Rest, A, B], x: X) extends Prog[Rest, B]
+  /** `k` unwound: its finalizers run, the innermost first, and nothing else of it — then `()` */
+  case Unwind[Rest[_], X, B, R0[_], V0, E[_], R[_], A](inner: Frames[R0, X, V0], crossed: Crossed[R0, V0, R, A],
+    at: At[E, R, Rest], h: Handler[E, Rest, A, B]) extends Prog[Rest, Unit]
 
 /** beside the conversion of a word, THE EVIDENCE A BIND ASKS FOR (`Fits`, `Known`): given search finds it here, and
  * nobody writes its names — so they are not beside `Prog`, where an `import okay.scala3.*` would bring them over a
@@ -36,6 +41,10 @@ enum Prog[R[_], +A]:
 object Prog:
   /** a word is a program of any row that has its effect: its place is found where the row is known */
   implicit def placed[E[_], X, R[_]](w: Word[E, X])(using at: In[E, R]): X ! R = w.into
+
+  /** where a finalizer is expected (`ensuring`, `bracket`), a thunk's value that is neither a program nor a word is
+   * dropped, as a statement's is: `ensuring(p)(log += "closed")` */
+  implicit def discarded[T](value: T)(using NotGiven[T <:< Prog[?, ?]], NotGiven[T <:< Unplaced[Any]]): Unit = ()
 
   /**
    * `P` IS A PROGRAM OF THE ROW `R`, to a `V`: as it is — and then this is nothing at run time; or a word, by its
@@ -164,7 +173,7 @@ def handle[E[_], R[_], Rest[_], A, B](p: A ! R, h: Handler[E, Rest, A, B])(using
  * control and audit of an effect, the program not changed
  */
 def intercept[E[_], R[_], A, B](p: A ! R, h: Handler[E, R, A, B])(using at: In[E, R]): B ! R =
-  Prog.Handle(Prog.Remap(p, Renamings.interposing(at.place)), Place.Last[R, E](), h)
+  Prog.Handle(Prog.Remap(p, Renamings.interposing(at.place)), Place.Last[R, E](), Handler.keeping(h, at.place))
 
 /** the program `p` with `E`, from wherever it is, at the end of its row */
 def split[E[_], R[_], Rest[_], A](p: A ! R)(using at: Split[E, R, Rest]): A ! (Rest + E) = (at.place: @unchecked) match
@@ -172,15 +181,23 @@ def split[E[_], R[_], Rest[_], A](p: A ! R)(using at: Split[E, R, Rest]): A ! (R
   case _ => Prog.Remap(p, Renamings.toEnd(at.place))
 
 /**
- * `p`, and `release` after it: when it ends, or when a handler that aborts (`Fail`, `Abort`) drops it — innermost
- * first. A general handler that drops the rest by not calling `k` drops it unseen, so its `release` does not run; one
- * that calls `k` twice runs it at each end.
+ * `p`, AND `release` WHEN IT IS LEFT. With a value: the finalizer runs, and the value is `p`'s. Without one — a
+ * handler outside does not go on with the rest of the program `p` is part of, and unwinds it (a failure, a choice of
+ * nothing, a generator cut short, a fiber cancelled): the finalizer runs then, where it was installed — the handlers
+ * between it and the one that leaves still answer it, their states as the path left them. Finalizers run the
+ * innermost first, each once for every path that ends or is unwound past it.
+ *
+ * The finalizer is a program of the same row, made when it is run, its value dropped; or a thunk — `ensuring(p)(log
+ * += "closed")` — a program that asks nothing. One that fails is left as any program is: what waits beyond it is
+ * still unwound, and the failure goes to its handler. Not run: when the rest of the program is kept and never resumed
+ * (a general handler that neither resumes nor unwinds its `k`, a stream not pulled to its end), and when the host
+ * throws out of the run.
  */
-def ensuring[A, R[_]](p: A ! R)(release: => Unit): A ! R = Prog.Ensure(p, () => release)
+def ensuring[A, R[_]](p: A ! R)(release: => Prog[R, Any] | Unit): A ! R = Prog.Ensure(p, () => release)
 
-/** `acquire`d, used, `release`d after the use: `ensuring` of the use */
-def bracket[S, A, R[_]](acquire: S ! R)(use: S => A ! R)(release: S => Unit): A ! R =
-  acquire.flatMap(s => ensuring(use(s))(release(s)))
+/** `acquire`d, used, `release`d when the use is left: `ensuring` of the use */
+def bracket[S, A, R[_]](acquire: S ! R)(use: S => A ! R)(release: S => Prog[R, Any] | Unit): A ! R =
+  Prog.FlatMap(acquire, s => Prog.Ensure(use(s), () => release(s)))
 
 /** each operation of `E` in `p` seen by `see` — a program of the row, run before the operation is passed on as it
  * is: an audit trail, a count, a trace */
