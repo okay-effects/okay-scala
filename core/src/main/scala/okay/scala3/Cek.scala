@@ -116,19 +116,32 @@ object Cek:
     case l: Levels.Renamed[r1, r2, a, w, z] => State[r2, a, w, Z](Prog.Value(a), l.outside, l.up)
     case g: Levels.Gone[e, r, rest, a, w, z] => State[rest, Any, w, Z](Prog.Value(a), g.outside, g.up)
 
-  /** a handler or a renaming entered: a level of its own, the body's frames from nothing. A finalizer: its frame. A
+  /** a handler or a renaming entered: a level, the body's frames from nothing. A finalizer: its frame. A
    * `k` unwound: its levels put back over the end of the unwinding — what waited for it — and walked */
   private def enter[R[_], X, V, Z](c: Prog[R, X], σ: Frames[R, X, V], κ: Levels[R, V, Z]): State[?, ?, ?, Z] =
     (c: @unchecked) match
       case h: Prog.Handle[e, r, rest, a, b] =>
         State[r, a, a, Z](h.p, Frames.End(), Levels.Handled[e, r, R, a, b, V, Z](h.at, Handler.fresh(h.h), σ, κ))
-      case r: Prog.Remap[r1, r2, a] =>
-        State[r1, a, a, Z](r.p, Frames.End(), Levels.Renamed[r1, R, a, V, Z](r.rename, σ, κ))
+      case r: Prog.Remap[r1, r2, a] => remapped[r1, R, a, V, Z](r, σ, κ)
       case e: Prog.Ensure[r, a] => State[R, a, V, Z](e.p, Frames.Finally[R, a, V](e.release, σ), κ)
       case u: Prog.Unwind[rest, x, b, r0, v0, e, rr, a] =>
         val end = Frames.Unwound[R, V](σ)
         val gone = Levels.Gone[e, rr, R, a, V, Z](u.at, Handler.kept(u.h), end, κ)
         walk[r0, x, v0, Z](u.inner, Crossed.putLeft(u.crossed, gone, end), end)
+
+  /** A PROGRAM OF THE ROW `R1` ENTERED, in the row `R`: a level that renames. IN TAIL POSITION — no frame waits for
+   * its value — under a level that renames, it needs none of its own: that one renames for both, by the two
+   * renamings as one (`Sub.composed`). So calls in tail position from row to row, however many, keep one level, and
+   * its renaming stays as big as the row. Under a handler's level, or the run's, it has its own: nothing is
+   * composed across a handler */
+  private def remapped[R1[_], R[_], A, V, Z](r: Prog.Remap[R1, R, A], σ: Frames[R, A, V], κ: Levels[R, V, Z])
+  : State[?, ?, ?, Z] = σ match
+    case _: Frames.End[r0, v] => κ match
+        case lower: Levels.Renamed[r0, r2, a, w, z] =>
+          val both = Levels.Renamed[R1, r2, A, w, Z](Sub.composed(r.rename, lower.rename), lower.outside, lower.up)
+          State[R1, A, A, Z](r.p, Frames.End(), both)
+        case _ => State[R1, A, A, Z](r.p, Frames.End(), Levels.Renamed[R1, R, A, V, Z](r.rename, σ, κ))
+    case _ => State[R1, A, A, Z](r.p, Frames.End(), Levels.Renamed[R1, R, A, V, Z](r.rename, σ, κ))
 
   /** UNWINDING, to its end `to`: the frames passed with no value. A finalizer's frame: a program runs, and the
    * unwinding goes on after it (`Unwinding`); a thunk has run. The end of a level's frames: the level is left without

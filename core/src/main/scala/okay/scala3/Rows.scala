@@ -157,35 +157,69 @@ trait Sub[R[_], S[_]]:
 
 object Sub extends SubMore:
   /** `Pure`'s one place — the empty effect's — to the empty effect's in `S` */
-  given pure[S[_]]: Sub[Pure, S] = new Sub[Pure, S]:
+  given pure[S[_]]: Sub[Pure, S] = OfPure()
+
+  /** the same row */
+  def same[R[_]]: Sub[R, R] = Same()
+
+  // THE RENAMINGS THE COMPILER FINDS, as data: so that one after another is one, no bigger than the row (`composed`)
+
+  private[scala3] final class OfPure[S[_]] extends Sub[Pure, S]:
     def apply[E[_]](at: At[E, Pure, ?]): At[E, S, ?] = (at: @unchecked) match
       case _: Place.Only[e] => Place.Absurd[S]()
       case _: Place.Absurd[r] => Place.Absurd[S]()
 
-  /** the same row */
-  def same[R[_]]: Sub[R, R] = new Sub[R, R]:
+  private[scala3] final class Same[R[_]] extends Sub[R, R]:
     def apply[E[_]](at: At[E, R, ?]): At[E, R, ?] = at
 
-trait SubMore extends SubOne:
-  /** the row of a `pure` or a `unit` that nothing said, in a branch beside words (`Branches`): no operation is of it */
-  given unsaid[S[_]]: Sub[Unsaid, S] = new Sub[Unsaid, S]:
+  private[scala3] final class OfUnsaid[S[_]] extends Sub[Unsaid, S]:
     def apply[E[_]](at: At[E, Unsaid, ?]): At[E, S, ?] =
       throw IllegalStateException("an operation of a row that nothing said")
 
-  /** `R + E`: `R`'s places and `E`'s */
-  given more[R[_], E[_], S[_]](using r: Sub[R, S], e: In[E, S]): Sub[R + E, S] = new Sub[R + E, S]:
+  /** `R + E`: `R`'s places by `r`, and `E`'s, `e` */
+  private[scala3] final class More[R[_], E[_], S[_]](val r: Sub[R, S], val e: At[E, S, ?]) extends Sub[R + E, S]:
     def apply[E2[_]](at: At[E2, R + E, ?]): At[E2, S, ?] = (at: @unchecked) match
-      case _: Place.Last[r1, e1] => e.place
+      case _: Place.Last[r1, e1] => e
       case i: Place.Init[e2, r2, g, rest] => r(i.at)
       case _: Place.First[e2, g] => r(Place.Only[e2]())
       case _: Place.Absurd[r] => Place.Absurd[S]()
 
+  /** a row of one: its effect's place, `e` */
+  private[scala3] final class One[E[_], S[_]](val e: At[E, S, ?]) extends Sub[E, S]:
+    def apply[E2[_]](at: At[E2, E, ?]): At[E2, S, ?] = (at: @unchecked) match
+      case _: Place.Only[e] => e
+      case _: Place.Absurd[r] => Place.Absurd[S]()
+
+  /** a renaming, then another, kept as two: the first is of no shape known here — one's own, `split`'s */
+  private[scala3] final class Both[R[_], S[_], T[_]](val first: Sub[R, S], val second: Sub[S, T]) extends Sub[R, T]:
+    def apply[E[_]](at: At[E, R, ?]): At[E, T, ?] = second(first(at))
+
+  /**
+   * `first`, THEN `next`: one renaming for two, one directly inside the other — what a program put into a row in
+   * tail position of one put into another runs under (`Cek`). Of the renamings found by the compiler it is as big
+   * as the row `R`, however many were composed: each place of `R` is taken to its place in `T` once, now.
+   */
+  private[scala3] def composed[R[_], S[_], T[_]](first: Sub[R, S], next: Sub[S, T]): Sub[R, T] = first match
+    case _: Same[r] => next
+    case m: More[r, e, s] => More[r, e, T](composed[r, s, T](m.r, next), next[e](m.e))
+    case o: One[e, s] => One[e, T](next[e](o.e))
+    case _: OfPure[s] => OfPure[T]()
+    case _: OfUnsaid[s] => OfUnsaid[T]()
+    case b: Both[r, s0, s] => Both[r, s0, T](b.first, composed[s0, s, T](b.second, next))
+    case _ => next match
+      case _: Same[s] => first
+      case _ => Both(first, next)
+
+trait SubMore extends SubOne:
+  /** the row of a `pure` or a `unit` that nothing said, in a branch beside words (`Branches`): no operation is of it */
+  given unsaid[S[_]]: Sub[Unsaid, S] = Sub.OfUnsaid()
+
+  /** `R + E`: `R`'s places and `E`'s */
+  given more[R[_], E[_], S[_]](using r: Sub[R, S], e: In[E, S]): Sub[R + E, S] = Sub.More(r, e.place)
+
 trait SubOne:
   /** a row of one: its effect's place in `S` */
-  given one[E[_], S[_]](using e: In[E, S]): Sub[E, S] = new Sub[E, S]:
-    def apply[E2[_]](at: At[E2, E, ?]): At[E2, S, ?] = (at: @unchecked) match
-      case _: Place.Only[e] => e.place
-      case _: Place.Absurd[r] => Place.Absurd[S]()
+  given one[E[_], S[_]](using e: In[E, S]): Sub[E, S] = Sub.One(e.place)
 
 /**
  * An operation at `at` in `R`, met by the handler of `E` at its place `mine` in `R`: the handler's own (`Mine`, so
