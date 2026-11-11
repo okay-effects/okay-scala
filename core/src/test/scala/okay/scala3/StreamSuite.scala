@@ -148,6 +148,35 @@ class StreamSuite extends munit.FunSuite:
     assertEquals(c.opened, 6)
   }
 
+  test("a resource closed when a pull is left by any handler: a choice of nothing, a generator cut, a run cancelled") {
+    val c = Counted()
+    val chosen = c.stream[Choose](100).evalMap(i => if i == 2 then Choose.none[Long, Choose] else pure[Long, Choose](i))
+    assertEquals(run(Choose.all(chosen.toList)), Nil)
+    assertEquals(run(Choose.first(chosen.toList)), None)
+    type Y[X] = (Yield % Long)[X]
+    val emitted = c.stream[Y](100).evalMap(i => Yield.emit[Long, Y](i)).drain
+    assertEquals(run(Yield.take[Long, Y, Pure, Unit](3)(emitted)), (List(0L, 1L, 2L), None))
+    assert(c.balanced, s"opened ${c.opened}, closed ${c.closed}")
+    assertEquals(c.opened, 3)
+    val waiting = Async.start(c.stream[Async](100).evalMap(i => Async.never[Long, Async]).drain)
+    waiting.cancel()
+    assert(c.balanced, s"opened ${c.opened}, closed ${c.closed}")
+    assertEquals(c.opened, 4)
+  }
+
+  test("a generator pulled as a stream and not read to its end is kept: its finalizer runs when it is") {
+    type Y[X] = (Yield % Int)[X]
+    var closed = 0
+    def three: Unit ! Y =
+      ensuring(Yield.emit[Int, Y](1).flatMap(_ => Yield.emit[Int, Y](2)).flatMap(_ => Yield.emit[Int, Y](3))) {
+        closed += 1
+      }
+    assertEquals(run(Stream.generated[Int, Y, Pure](three).take(2).toList), List(1, 2))
+    assertEquals(closed, 0)
+    assertEquals(run(Stream.generated[Int, Y, Pure](three).toList), List(1, 2, 3))
+    assertEquals(closed, 1)
+  }
+
   test("an iterator closed, the rest released; mergeAsync stopped, its streams released") {
     val c = Counted()
     val it = c.stream[Pure](100).iterator

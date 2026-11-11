@@ -77,6 +77,15 @@ class CatsSuite extends munit.FunSuite:
       assert(t.isLeft, t)
   }
 
+  test("toIO cancelled: the program is left, and its finalizer runs") {
+    val closed = Promise[Unit]()
+    val waiting: Int ! Async = ensuring(Async.never[Int, Async])(closed.trySuccess(()))
+    for
+      r <- IOs.toIO(waiting).timeoutTo(30.millis, IO.pure(-1)).unsafeToFuture()
+      _ <- closed.future
+    yield assertEquals(r, -1)
+  }
+
   test("a Resource used: acquired, used, released — after a failure too") {
     val log = collection.mutable.ListBuffer.empty[String]
     def resource(name: String): Resource[IO, String] =

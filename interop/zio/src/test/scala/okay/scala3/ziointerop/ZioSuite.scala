@@ -84,6 +84,16 @@ class ZioSuite extends munit.FunSuite:
     yield assertEquals(r, Right(None))
   }
 
+  test("interrupted in ZIO: the program is left, and its finalizer runs") {
+    val closed = Promise[Unit]()
+    val waiting: Int ! Row = ensuring(Async.never[Int, Row])(closed.trySuccess(()))
+    for
+      r <- unsafeRun(toZIOTyped(waiting).provideEnvironment(ZEnvironment(hello)).timeout(zio.Duration.fromMillis(30))
+        .either)
+      _ <- closed.future
+    yield assertEquals(r, Right(None))
+  }
+
   test("layers: a program's environment built by a layer; a program making a service, a layer") {
     type NoEnv[X] = ZioRow[Any, String][X]
     val greeted: String ! Row = Reader.ask[ZEnvironment[Greeting], Row].map(_.get[Greeting].greet("Cy"))
