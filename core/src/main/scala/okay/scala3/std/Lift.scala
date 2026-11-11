@@ -21,22 +21,28 @@ trait Lowering[G[_]]:
   /** `ga` gives the rest of the program no value — a `None`, a `Left`: the rest is left, and unwound first
    * (`ensuring`). Not known of a monad unless it says so: then the rest is kept, as its bind keeps it */
   def leaves[A](ga: G[A]): Boolean = false
+  /** the value `ga` holds now, if it says so — a `Some`'s, a `Right`'s: the rest goes on from it in the machine, in
+   * constant stack, where a bind that calls back at once would nest a run in a run for every value lifted */
+  def held[A](ga: G[A]): Option[A] = None
 
 object Lowering:
   given Lowering[Option] with
     def pure[A](a: A): Option[A] = Some(a)
     def flatMap[A, B](ga: Option[A])(f: A => Option[B]): Option[B] = ga.flatMap(f)
     override def leaves[A](ga: Option[A]): Boolean = ga.isEmpty
+    override def held[A](ga: Option[A]): Option[A] = ga
 
   given either[E]: Lowering[[A] =>> Either[E, A]] with
     def pure[A](a: A): Either[E, A] = Right(a)
     def flatMap[A, B](ga: Either[E, A])(f: A => Either[E, B]): Either[E, B] = ga.flatMap(f)
     override def leaves[A](ga: Either[E, A]): Boolean = ga.isLeft
+    override def held[A](ga: Either[E, A]): Option[A] = ga.toOption
 
   given Lowering[Try] with
     def pure[A](a: A): Try[A] = scala.util.Success(a)
     def flatMap[A, B](ga: Try[A])(f: A => Try[B]): Try[B] = ga.flatMap(f)
     override def leaves[A](ga: Try[A]): Boolean = ga.isFailure
+    override def held[A](ga: Try[A]): Option[A] = ga.toOption
 
   given future(using ExecutionContext): Lowering[Future] with
     def pure[A](a: A): Future[A] = Future.successful(a)
@@ -108,7 +114,7 @@ object Lift:
   def lift[G[_], X, R[_]](ga: G[X])(using In[Lifted[G], R]): X ! R = perform[Lifted[G]](Of(ga))
 
   /** a program whose one effect is lifting `G`'s, as a `G`: each lifted `G[X]` bound in `G`, the rest run inside the
-   * bind */
+   * bind — or going on at once from the value it holds, when `G` says it holds one (`Lowering.held`) */
   def lower[G[_], A](p: A ! Lifted[G])(using G: Lowering[G]): G[A] = lowered(p)
 
   /** the same of a row whose one effect left is `Lifted[G]`, of any shape: `Pure + Lifted[G]`, what is left when the
@@ -119,9 +125,11 @@ object Lift:
   private def lowered[G[_], R[_], A](p: A ! R)(using at: Split[Lifted[G], R, Pure], G: Lowering[G]): G[A] =
     run(okay.scala3.handle(p, Handler.control[Lifted[G], Pure, A, G[A]](a => pure(G.pure(a)))(
       [X] => (op: Lift[G, X], k: Continuation[X, Pure, G[A]]) => op match
-        case Of(ga) =>
-          if G.leaves(ga) then k.unwind.map(_ => G.flatMap(ga)(x => run(k(x))))
-          else pure(G.flatMap(ga)(x => run(k(x)))))))
+        case Of(ga) => G.held(ga) match
+          case Some(x) => k(x)
+          case None =>
+            if G.leaves(ga) then k.unwind.map(_ => G.flatMap(ga)(x => run(k(x))))
+            else pure(G.flatMap(ga)(x => run(k(x)))))))
 
   /** `Lifted[G]` HANDLED IN PLACE, the rest of the row kept: each lifted `G[X]` bound by `G`'s distributive law to the
    * rest of the program — so any number of data monads are handled one after another, the last, a `Future` or an

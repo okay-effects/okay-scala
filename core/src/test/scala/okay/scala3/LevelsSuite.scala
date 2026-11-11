@@ -122,6 +122,18 @@ class LevelsSuite extends munit.FunSuite:
     assertEquals((pulledMapped(1000)._2, pulledMapped(2000)._2), ((2, 9), (2, 9)))
   }
 
+  test("a program lowered to a monad whose values are held now: a million of them lifted, in constant stack") {
+    assertEquals(Lift.lower(lifts(1_000_000)), Some(1_000_000))
+    type E[X] = Lifted[[A] =>> Either[String, A]][X]
+    def rights(n: Int, sum: Int = 0): Int ! E =
+      if n == 0 then pure(sum)
+      else Lift.lift[[A] =>> Either[String, A], Int, E](Right(1)).flatMap(x => rights(n - 1, sum + x))
+    assertEquals(Lift.lower(rights(1_000_000)), Right(1_000_000))
+    // one that holds none ends the program there, as its bind does
+    val none: Int ! Lifted[Option] = lifts(1000).flatMap(_ => Lift.lift[Option, Int, Lifted[Option]](None))
+    assertEquals(Lift.lower(none), None)
+  }
+
   test("a program driven as `Async` drives it, resumed wait after wait: its rest holds one level, however long") {
     assertEquals((driven(waitsInTail(1000)), driven(waitsInTail(2000))), ((1000, (1, 1)), (2000, (1, 1))))
     // what waits for each answer is the program's own: a frame a wait, and still one level

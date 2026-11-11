@@ -60,4 +60,4 @@ object LevelsProbe:
     doubling("Stream.generated, mapped", 20000)(pulledMapped)
     doubling("driven as Async, tail", 20000)(n => driven(waitsInTail(n)))
     doubling("Async.toFuture", 20000)(future)
-    doubling("Lift.lower, Option", 500, 3)(n => Lift.lower(lifts(n)))
+    doubling("Lift.lower, Option", 20000)(n => Lift.lower(lifts(n)))
