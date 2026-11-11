@@ -30,7 +30,8 @@ enum Step[+O, R[_]]:
  * (`evalMap`, `foreach`) runs per value: as far as pulled, no further. `chunks` and `unchunks` to see them.
  *
  * RESOURCES: `release`, what to do if the stream is left unpulled — a file, a cursor, a Java stream closed. A stream
- * holding one (`Stream.bracket`) closes it when it ends, when a value's program fails, and when it is left: `take`,
+ * holding one (`Stream.bracket`) closes it when it ends, when a pull of it is left (`ensuring`: a value's program
+ * fails, a handler outside unwinds it, its fiber is cancelled), and when it is left unpulled: `take`,
  * `takeWhile`, `headOption`, `zip`'s longer, a merge stopped, call `release` of what they leave. A stream given to
  * `++` by name is not opened until it is reached, so has nothing to release before.
  */
@@ -253,7 +254,7 @@ object Stream:
   /** nothing to release */
   val nothing: () => Unit = () => ()
 
-  /** `p`, and `fin` if it does not end with a value: a failure, an abort */
+  /** `p`, and `fin` if it does not end with a value: it is left — a failure, an abort, any handler that unwinds */
   private[std] def onAbort[A, R[_]](p: A ! R)(fin: () => Unit): A ! R =
     if fin eq nothing then p
     else okay.scala3.defer {
@@ -296,7 +297,8 @@ object Stream:
     () => if done.compareAndSet(false, true) then f()
 
   /** A STREAM OF A RESOURCE: `acquire`d at the first pull, `use`d, and `release`d once — when the stream ends, when a
-   * value's program fails, or when it is left (`take`, `headOption`, a merge stopped) */
+   * pull of it is left (a value's program fails, a handler unwinds it), or when it is left unpulled (`take`,
+   * `headOption`, a merge stopped) */
   def bracket[S, O, R[_]](acquire: S ! R)(release: S => Unit)(use: S => Stream[O, R]): Stream[O, R] =
     Stream(acquire.flatMap(s => use(s).finishing(once(() => release(s))).pull))
 
@@ -365,7 +367,9 @@ object Stream:
       pure(Emit(Chunk.from(from until to), range(to, until, chunk)))
     })
 
-  /** a generator, written with `Yield.emit`, as a stream: it runs to its next `emit` when pulled, and stops there */
+  /** a generator, written with `Yield.emit`, as a stream: it runs to its next `emit` when pulled, and stops there.
+   * The stream keeps the rest of the generator: one not pulled to its end is not left, and its finalizers
+   * (`ensuring`) do not run — a generator that holds something is pulled to its end, or cut by `Yield.take` */
   def generated[O, R[_], Rest[_]](p: Unit ! R)(using Split[Yield % O, R, Rest]): Stream[O, Rest] =
     Stream(handle(p, Handler.general[Yield % O, Rest, Unit, Step[O, Rest]](_ => pure(Done()))(
       [X] => (op: Yield[O, X], k: X => Step[O, Rest] ! Rest) => op match

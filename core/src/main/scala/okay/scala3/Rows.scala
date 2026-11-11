@@ -190,25 +190,21 @@ object Sub extends SubMore:
       case _: Place.Only[e] => e
       case _: Place.Absurd[r] => Place.Absurd[S]()
 
-  /** a renaming, then another, kept as two: the first is of no shape known here — one's own, `split`'s */
-  private[scala3] final class Both[R[_], S[_], T[_]](val first: Sub[R, S], val second: Sub[S, T]) extends Sub[R, T]:
-    def apply[E[_]](at: At[E, R, ?]): At[E, T, ?] = second(first(at))
-
   /**
    * `first`, THEN `next`: one renaming for two, one directly inside the other — what a program put into a row in
-   * tail position of one put into another runs under (`Cek`). Of the renamings found by the compiler it is as big
-   * as the row `R`, however many were composed: each place of `R` is taken to its place in `T` once, now.
+   * tail position of one put into another runs under (`Cek`). It is as big as the row `R`, however many were
+   * composed: each place of `R` is taken to its place in `T` once, now. `null` when `first` is of no shape known
+   * here — one's own, `split`'s: the two would only be kept one behind the other, a chain as long as the calls.
    */
-  private[scala3] def composed[R[_], S[_], T[_]](first: Sub[R, S], next: Sub[S, T]): Sub[R, T] = first match
+  private[scala3] def composed[R[_], S[_], T[_]](first: Sub[R, S], next: Sub[S, T]): Sub[R, T] | Null = first match
     case _: Same[r] => next
-    case m: More[r, e, s] => More[r, e, T](composed[r, s, T](m.r, next), next[e](m.e))
+    case m: More[r, e, s] =>
+      val r = composed[r, s, T](m.r, next)
+      if r == null then null else More[r, e, T](r, next[e](m.e))
     case o: One[e, s] => One[e, T](next[e](o.e))
     case _: OfPure[s] => OfPure[T]()
     case _: OfUnsaid[s] => OfUnsaid[T]()
-    case b: Both[r, s0, s] => Both[r, s0, T](b.first, composed[s0, s, T](b.second, next))
-    case _ => next match
-      case _: Same[s] => first
-      case _ => Both(first, next)
+    case _ => null
 
 trait SubMore extends SubOne:
   /** the row of a `pure` or a `unit` that nothing said, in a branch beside words (`Branches`): no operation is of it */

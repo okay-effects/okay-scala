@@ -96,12 +96,15 @@ class LevelsSuite extends munit.FunSuite:
     assertEquals(run(State.run(0)(State.run(0)(one))), (0, (10, (10, 10))))
   }
 
-  test("a renaming of no shape the machine knows, before or after one it knows: kept as two, the places right") {
+  test("a renaming of no shape the machine knows: a level of its own, the calls inside it still one level") {
     // `split` takes the state to the end of the row by a renaming of its own
-    val turned: Unit ! Back = split[State % Int, Forth, Probe, Unit](ping(1000))
-    assertEquals(run(State.run(0)(probed(turned).map(_._2))), (1000, (2, 2)))
-    val back: Unit ! Forth = split[State % Int, Forth, Probe, Unit](ping(1000)).into[Forth]
-    assertEquals(run(State.run(0)(probed(back).map(_._2))), (1000, (2, 2)))
+    def turned(n: Int): Unit ! Back = split[State % Int, Forth, Probe, Unit](ping(n))
+    assertEquals(run(State.run(0)(probed(turned(1000)).map(_._2))), (1000, (2, 2)))
+    assertEquals(run(State.run(0)(probed(turned(2000)).map(_._2))), (2000, (2, 2)))
+    // in tail position of a program put into a row, it is not made one with that: its level, and that one's
+    def back(n: Int): Unit ! Forth = turned(n).into[Forth]
+    assertEquals(run(State.run(0)(probed(back(1000)).map(_._2))), (1000, (3, 2)))
+    assertEquals(run(State.run(0)(probed(back(2000)).map(_._2))), (2000, (3, 2)))
     // an interceptor in the row the calls come back to: it sees every state operation of both rows
     var seen = 0
     val counted = observe[State % Int, Forth, Unit](ping(1000))([X] => (_: State[Int, X]) => defer(pure { seen += 1 }))

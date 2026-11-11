@@ -133,13 +133,14 @@ object Cek:
    * its value — under a level that renames, it needs none of its own: that one renames for both, by the two
    * renamings as one (`Sub.composed`). So calls in tail position from row to row, however many, keep one level, and
    * its renaming stays as big as the row. Under a handler's level, or the run's, it has its own: nothing is
-   * composed across a handler */
+   * composed across a handler; nor is a renaming of a shape `composed` does not know */
   private def remapped[R1[_], R[_], A, V, Z](r: Prog.Remap[R1, R, A], σ: Frames[R, A, V], κ: Levels[R, V, Z])
   : State[?, ?, ?, Z] = σ match
     case _: Frames.End[r0, v] => κ match
         case lower: Levels.Renamed[r0, r2, a, w, z] =>
-          val both = Levels.Renamed[R1, r2, A, w, Z](Sub.composed(r.rename, lower.rename), lower.outside, lower.up)
-          State[R1, A, A, Z](r.p, Frames.End(), both)
+          val both = Sub.composed(r.rename, lower.rename)
+          if both == null then State[R1, A, A, Z](r.p, Frames.End(), Levels.Renamed[R1, R, A, V, Z](r.rename, σ, κ))
+          else State[R1, A, A, Z](r.p, Frames.End(), Levels.Renamed[R1, r2, A, w, Z](both, lower.outside, lower.up))
         case _ => State[R1, A, A, Z](r.p, Frames.End(), Levels.Renamed[R1, R, A, V, Z](r.rename, σ, κ))
     case _ => State[R1, A, A, Z](r.p, Frames.End(), Levels.Renamed[R1, R, A, V, Z](r.rename, σ, κ))
 

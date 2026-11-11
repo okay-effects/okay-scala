@@ -3,7 +3,8 @@ package okay.scala3.std
 import okay.scala3.*
 
 /** DELIMITED CONTROL: `Shift(f)`, `f` given the rest of the program up to the nearest `reset` — `k`, resumable any
- * number of times — its value the `reset`'s. `P` is the answer program, `B ! R` */
+ * number of times — its value the `reset`'s. `P` is the answer program, `B ! R`. An `f` that does not call `k` keeps
+ * the rest and never resumes it: nothing of it runs, its finalizers (`ensuring`) neither */
 enum Control[P, X]:
   case Shift[P, X](f: (X => P) => P) extends Control[P, X]
 
