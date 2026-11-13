@@ -2,6 +2,7 @@ package okay.scala3.bench
 
 import java.util.concurrent.TimeUnit
 import org.openjdk.jmh.annotations.{Benchmark, BenchmarkMode, Mode, OutputTimeUnit, Scope, State}
+import okay.scala3.*
 
 /** the machine on okay-simple's benchmark programs, in this library's words. okay-simple measures its own machine
  * against this one on the same programs, in its own benchmarks */
@@ -18,3 +19,5 @@ class CekBenchmark:
   @Benchmark def askNearIn: Int = lane.askNearIn
   @Benchmark def askAcross4In: Int = lane.askAcross4In
   @Benchmark def stateLoopIn: Int = lane.stateLoopIn
+  /** a run of one step: what a run costs beside its steps — the nested-run mark set and cleared (`Cek.run`) */
+  @Benchmark def oneStepRun: Int = run(pure[Int, Pure](1).map(_ + 1))

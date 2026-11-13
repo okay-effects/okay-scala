@@ -260,8 +260,42 @@ object Cek:
     def holds: Boolean = Frames.holds(inner) || Crossed.holds(crossed)
     def unwind: Prog[Rest, Unit] = if holds then Prog.Unwind(inner, crossed, at, h) else Prog.Value(())
 
-  def run[A](p: Prog[Pure, A]): A = steps[Pure, A, A, A](p, Frames.End(), Levels.Top(Escape.pure))
+  /** A PROGRAM OF NO EFFECT, RUN — refused (`NestedRun`) while a program runs on this thread: from a continuation
+   * or a handler's clause, a run would be a second machine on the JVM's stack */
+  def run[A](p: Prog[Pure, A]): A = guarded(p, Escape.pure)
 
   /** a program over `P`, a row of no effect of another representation, its places' `escape` refuting what gets past
-   * every handler: how another library's rows run on this machine */
-  def run[P[_], A](p: Prog[P, A], escape: Escape[P]): A = steps[P, A, A, A](p, Frames.End(), Levels.Top(escape))
+   * every handler: how another library's rows run on this machine. Refused as `run` is */
+  def run[P[_], A](p: Prog[P, A], escape: Escape[P]): A = guarded(p, escape)
+
+  /** A CLOSED SUB-PROGRAM, RUN TO ITS END ON PURPOSE, wherever — inside a running program too: a machine of its own on
+   * the stack, that sees none of the program's handlers. The escape from `NestedRun`, for what is a run of its own: a
+   * conversion (`Lift.lower`, `Async.toFuture`, a stream's iterator), a pure helper evaluated whole. Not at each step
+   * of a loop: each nests one machine more on the stack */
+  def runIsolated[A](p: Prog[Pure, A]): A = isolated(p, Escape.pure)
+
+  /** the same over another representation's row */
+  def runIsolated[P[_], A](p: Prog[P, A], escape: Escape[P]): A = isolated(p, escape)
+
+  /** THE MARK OF A THREAD THAT RUNS A PROGRAM: set while the machine loops, so that a run begun meanwhile on the same
+   * thread — nested on its stack — is told from one begun anywhere else: after the run returned, on another thread,
+   * from a callback the event loop calls. One thread-local read and two writes a run; none a step */
+  private final class Mark:
+    var on = false
+
+  private val marks: ThreadLocal[Mark] = new ThreadLocal[Mark]:
+    override def initialValue(): Mark = Mark()
+
+  private def guarded[P[_], A](p: Prog[P, A], escape: Escape[P]): A =
+    val mark = marks.get()
+    if mark.on then throw NestedRun()
+    mark.on = true
+    try steps[P, A, A, A](p, Frames.End(), Levels.Top(escape))
+    finally mark.on = false
+
+  private def isolated[P[_], A](p: Prog[P, A], escape: Escape[P]): A =
+    val mark = marks.get()
+    val was = mark.on
+    mark.on = true
+    try steps[P, A, A, A](p, Frames.End(), Levels.Top(escape))
+    finally mark.on = was

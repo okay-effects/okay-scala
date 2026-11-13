@@ -448,7 +448,7 @@ object Stream:
     /** a stream of no effect as an iterator: each chunk pulled when reached; `close` releases what is left */
     def iterator: Pulling[O] = Pulling(s)
 
-  private def pulled[O](s: Stream[O, Pure]): Option[(Chunk[O], Stream[O, Pure])] = run(s.pull) match
+  private def pulled[O](s: Stream[O, Pure]): Option[(Chunk[O], Stream[O, Pure])] = runIsolated(s.pull) match
     case Done() => None
     case Emit(c, rest) => Some((c, rest))
 

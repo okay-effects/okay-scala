@@ -104,8 +104,9 @@ class StreamSuite extends munit.FunSuite:
     assertEquals(counted.iterator.drop(2).next(), 2)
     type R[X] = (State % Int)[X]
     val effectful = Stream.range[R](0, 3).evalTap(_ => State.modify[Int, R](_ + 1))
-    assertEquals(Stream.fromIterator[Long, Pure](
-      run(State.run(0)(effectful.toList))._2.iterator).toLazyList.toList, List(0L, 1L, 2L))
+    // run first: `fromIterator` takes its iterator by name, made in the stream's pull — a run there would nest
+    val values = run(State.run(0)(effectful.toList))._2
+    assertEquals(Stream.fromIterator[Long, Pure](values.iterator).toLazyList.toList, List(0L, 1L, 2L))
   }
 
   /** a resource counted: opened, closed */

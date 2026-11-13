@@ -177,7 +177,7 @@ object Async:
   private def leave[A, X](k: X => Waiting[A] ! Pure, e: Throwable, done: Promise[A]): Unit =
     try k match
       // the rest as the machine gives it: `Waiting` keeps it as the function it was in 0.1.1, for its bytecode
-      case rest: Continuation[X, Pure, Waiting[A]] => okay.scala3.run(rest.unwind)
+      case rest: Continuation[X, Pure, Waiting[A]] => okay.scala3.runIsolated(rest.unwind)
       case _ => ()
     catch case NonFatal(thrown) => done.tryFailure(thrown)
     done.tryFailure(e)
@@ -196,7 +196,7 @@ object Async:
       while next.isDefined do
         val now = next.get
         next = None
-        okay.scala3.run(now) match
+        okay.scala3.runIsolated(now) match
           case Waiting.Done(a) => done.trySuccess(a)
           case s: Waiting.Suspended[a, x] =>
             val slot = AtomicReference[Either[Throwable, x]](null)

@@ -123,13 +123,13 @@ object Lift:
   def lower[G[_], R[_], A](p: A ! R)(using at: Split[Lifted[G], R, Pure], G: Lowering[G]): G[A] = lowered(p)
 
   private def lowered[G[_], R[_], A](p: A ! R)(using at: Split[Lifted[G], R, Pure], G: Lowering[G]): G[A] =
-    run(okay.scala3.handle(p, Handler.control[Lifted[G], Pure, A, G[A]](a => pure(G.pure(a)))(
+    runIsolated(okay.scala3.handle(p, Handler.control[Lifted[G], Pure, A, G[A]](a => pure(G.pure(a)))(
       [X] => (op: Lift[G, X], k: Continuation[X, Pure, G[A]]) => op match
         case Of(ga) => G.held(ga) match
           case Some(x) => k(x)
           case None =>
-            if G.leaves(ga) then k.unwind.map(_ => G.flatMap(ga)(x => run(k(x))))
-            else pure(G.flatMap(ga)(x => run(k(x)))))))
+            if G.leaves(ga) then k.unwind.map(_ => G.flatMap(ga)(x => runIsolated(k(x))))
+            else pure(G.flatMap(ga)(x => runIsolated(k(x)))))))
 
   /** `Lifted[G]` HANDLED IN PLACE, the rest of the row kept: each lifted `G[X]` bound by `G`'s distributive law to the
    * rest of the program — so any number of data monads are handled one after another, the last, a `Future` or an

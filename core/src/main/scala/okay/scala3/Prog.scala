@@ -213,3 +213,8 @@ def around[E[_], R[_], A](p: A ! R)(f: [X] => (E[X], X ! R) => X ! R)(using at: 
 
 /** a program of no effect, run */
 def run[A](p: A ! Pure): A = Cek.run(p)
+
+/** a closed program of no effect run to its end ON PURPOSE, inside a running program too: a run of its own, which
+ * sees none of the program's handlers — where `run` there is refused (`NestedRun`). For a conversion, a pure helper
+ * evaluated whole; not at each step of a loop. A handler is installed as a part of the program instead: `.into[R]` */
+def runIsolated[A](p: A ! Pure): A = Cek.runIsolated(p)

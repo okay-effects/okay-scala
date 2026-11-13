@@ -33,6 +33,16 @@ abstract class Continuation[-X, R[_], +B] private[scala3] () extends (X => B ! R
  * run; there is no value to go on with. */
 final class NoUnwinding extends RuntimeException("the rest of an unwinding was resumed outside the unwinding")
 
+/** A RUN BEGUN WHILE A PROGRAM RUNS ON THE SAME THREAD — `run` called inside a continuation (`flatMap`, `map`) or a
+ * handler's clause: refused, at once, before its first step. Such a run is a second machine on the JVM's stack: it
+ * sees none of the program's handlers, a `k` cannot be taken across it, and done at each step the stack overflows */
+final class NestedRun extends RuntimeException(
+  "okay-scala: a program was run (run, Cek.run) inside a running program — in a continuation (flatMap, map) or a " +
+    "handler's clause. A nested run is a second machine on the stack: it sees none of the program's handlers, and " +
+    "at each step it overflows the stack. Install the handler as a part of the program instead — State.run(s)(p), " +
+    "handle(p, h) are programs: flatMap them, or `.into[R]` a closed one; for a closed sub-program run to its end " +
+    "on purpose, as a run of its own, runIsolated(p)")
+
 /**
  * A HANDLER OF `E`, the row outside it `R`, the body's value `A`, its own `B`: of one of these shapes, which the
  * machine runs each its own way. Each clause takes an operation `E[X]` as it is, and its match learns `X` from the
