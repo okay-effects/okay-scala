@@ -97,7 +97,8 @@ def run[S, R[_], Rest[_], A](init: S)(p: A ! R)(using Split[State % S, R, Rest])
 | `observe(p)(see)`, `around(p)(f)` | each operation of `E` seen, or wrapped, then passed on: an audit trail, a trace, a change |
 | `ensuring(p)(release)`, `bracket(acquire)(use)(release)` | `release`, a program of the row or a thunk, run when `p` is left: it ends, or a handler unwinds it — a failure, a choice of nothing, a generator cut, a fiber cancelled ([design](docs/design.md#leaving-ensuring-and-unwind)) |
 | `p.into[S]`, `split(p)` | into a bigger row; an effect to the end of the row |
-| `run(p)` | a program of no effect, run |
+| `run(p)` | a program of no effect, run by the host; refused inside a running program (`NestedRun`) |
+| `runIsolated(p)` | the same inside a running program, on purpose ([a run of its own](#one-run-a-thread-nestedrun)) |
 
 The standard effects, in `okay.scala3.std`:
 
@@ -253,6 +254,36 @@ val io: IO[Int] = IOs.toIO(n)   // 42, run as any IO
 ```
 
 tofu: `withLocal[R, Rest, C]` and `errors[R, Rest, E]`, for code written over `F[_]` with tofu's classes.
+
+## One run a thread: `NestedRun`
+
+`run` is for the host: `main`, a test, a route that runs a program to its end. Called INSIDE a running program — in a
+`flatMap`, a `map`, a handler's clause — it would start a second machine on the stack: that run sees none of the
+program's handlers, a `k` cannot be taken across it, and done at each step of a loop it overflows the stack (1000
+steps under `-Xss512k`). So it is refused, at once, before its first step: `NestedRun`, with what to do instead.
+
+```scala
+// refused: a run of its own at each step
+def sum(i: Int): Int ! Pure = if i == 0 then pure(0) else pure(1).flatMap(x => pure(x + run(sum(i - 1))))
+run(sum(1000))                                    // NestedRun
+
+// the handler installed as a part of the program: State.run(s)(p) is a program — flatMap it
+type RS[X] = (State % Int)[X]
+def counting(i: Int): Unit ! RS = if i == 0 then pure(()) else State.modify[Int, RS](_ + 1).andThen(counting(i - 1))
+def each(i: Int, acc: Int): Int ! Pure =
+  if i == 0 then pure(acc) else State.run(0)(counting(3)).flatMap((s, _) => each(i - 1, acc + s))
+```
+
+A closed program of the row, put into a bigger one, is `p.into[R]`. What is a run of its own on purpose — a
+conversion, a pure helper evaluated whole — says so: `runIsolated(p)` (`Cek.runIsolated(p, escape)` for another
+library's rows) runs it inside a running program too. The library's own runs of their own do: `Lift.lower` (its run
+and those its bind calls back), `Async`'s driver (a fork a step starts, a wait resumed by a callback called inside
+another run, the rest left), a stream's `toLazyList` and `iterator`. A by-name argument made where the machine pulls it
+— `Stream.fromIterator(run(..).iterator)` — is inside the run: make it first.
+
+The mark is the thread's (a `ThreadLocal`, read once and written twice a run, never a step: no cost measured). A run
+on another thread, a virtual one, a pool's — a program resumed by a callback there — is a run of its own and goes on;
+on Scala.js callbacks come from the event loop, after the run.
 
 ## The machine
 
