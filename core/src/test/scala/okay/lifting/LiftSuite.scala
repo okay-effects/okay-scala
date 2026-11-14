@@ -34,3 +34,21 @@ class LiftSuite extends munit.FunSuite:
       val k: Unit ! Yield % Int + State % Int = Writer.tell("x")""")
     assert(known.contains("the effect Writer % String is not in the row Yield % Int + State % Int"), known)
   }
+
+  test("a program of the abstract row R, bound in R + State % Int, is put there with its places one further in") {
+    def plain[R[_]: Has[Yield % Int]](x: Int): Unit ! R + State % Int =
+      for
+        s <- State.get[Int]
+        _ <- State.put(s + x)
+        _ <- Yield.emit(s + x)          // a program of R: embedded into R + State % Int, not taken for an effect
+      yield ()
+    def all[R[_]: Has[Yield % Int]](xs: List[Int]): Unit ! R =
+      State.run(0)(xs.foldLeft(unit[R + State % Int])((p, x) => p.flatMap(_ => plain[R](x)))).map(_ => ())
+    assertEquals(run(Yield.collect(all[Yield % Int](List(1, 2, 3)))), (List(1, 3, 6), ()))
+    type App[X] = (Reader % Int + Yield % Int)[X]
+    assertEquals(run(Reader.run(0)(Yield.collect(all[App](List(2, 2))))), (List(2, 4), ()))
+    // two effects added after R, and a row of two under R
+    def twice[R[_]: Has[Yield % Int]]: Unit ! R + State % Int + Writer % String = Yield.emit(7)
+    assertEquals(run(Reader.run(0)(Writer.run(State.run(0)(Yield.collect(twice[App]))))),
+      (Nil, (0, (List(7), ()))))
+  }

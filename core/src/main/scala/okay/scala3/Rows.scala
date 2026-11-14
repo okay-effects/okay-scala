@@ -1,6 +1,7 @@
 package okay.scala3
 
 import scala.annotation.implicitNotFound
+import scala.util.NotGiven
 
 /*
  * THE ROWS, as okay-simple writes them — the same types: an effect is the GADT of its operations, a type
@@ -178,6 +179,33 @@ object Sub extends SubMore:
     def apply[E[_]](at: At[E, Unsaid, ?]): At[E, S, ?] =
       throw IllegalStateException("an operation of a row that nothing said")
 
+  /** `R` into `S + G`, through `R` into `S`: every place one further in. What a program of an abstract row is put into
+   * the row with effects added after it by (`Prefix`) */
+  private[scala3] final class Shifted[R[_], S[_], G[_]](val inner: Sub[R, S]) extends Sub[R, S + G]:
+    def apply[E[_]](at: At[E, R, ?]): At[E, S + G, ?] = inner(at) match
+      case p: Place[E, S, rest] => Place.Init[E, S, G, rest](p)
+      case other => throw IllegalStateException(s"a place of another representation, $other, put into a bigger row")
+
+  /** `R` IS THE ROW AT THE START OF `S`: `S` is `R` with effects added after it — `R + G`, `R + G + H`. Found before a
+   * row of one (`one`), which would take an abstract row `R` for an effect, its place `Only`: an operation of `R` at
+   * any other place would not be found */
+  sealed trait Prefix[R[_], S[_]]:
+    def sub: Sub[R, S]
+
+  object Prefix extends PrefixFurther:
+    given here[R[_]]: Prefix[R, R] = new Prefix[R, R]:
+      def sub: Sub[R, R] = Same()
+
+  /** `G` is `R`: an effect added after itself is no row with effects added — its last place is the one found (`one`) */
+  sealed trait Twice[R[_], G[_]]
+  object Twice:
+    given itself[R[_]]: Twice[R, R] = new Twice[R, R] {}
+
+  trait PrefixFurther:
+    given further[R[_], S[_], G[_]](using p: Prefix[R, S], other: NotGiven[Twice[R, G]]): Prefix[R, S + G] =
+      new Prefix[R, S + G]:
+        val sub: Sub[R, S + G] = Shifted(p.sub)
+
   /** `R + E`: `R`'s places by `r`, and `E`'s, `e` */
   private[scala3] final class More[R[_], E[_], S[_]](val r: Sub[R, S], val e: At[E, S, ?]) extends Sub[R + E, S]:
     def apply[E2[_]](at: At[E2, R + E, ?]): At[E2, S, ?] = (at: @unchecked) match
@@ -204,16 +232,27 @@ object Sub extends SubMore:
       val r = composed[r, s, T](m.r, next)
       if r == null then null else More[r, e, T](r, next[e](m.e))
     case o: One[e, s] => One[e, T](next[e](o.e))
+    case s: Shifted[r, s, g] => next match
+      case _: Same[t] => s
+      case m: More[s2, g2, t] => composed[r, s, T](s.inner, m.r)
+      case n: Shifted[sg, t, h] =>
+        val c = composed[r, s + g, t](s, n.inner)
+        if c == null then null else Shifted[r, t, h](c)
+      case _ => null
     case _: OfPure[s] => OfPure[T]()
     case _: OfUnsaid[s] => OfUnsaid[T]()
     case _ => null
 
-trait SubMore extends SubOne:
+trait SubMore extends SubPrefix:
   /** the row of a `pure` or a `unit` that nothing said, in a branch beside words (`Branches`): no operation is of it */
   given unsaid[S[_]]: Sub[Unsaid, S] = Sub.OfUnsaid()
 
   /** `R + E`: `R`'s places and `E`'s */
   given more[R[_], E[_], S[_]](using r: Sub[R, S], e: In[E, S]): Sub[R + E, S] = Sub.More(r, e.place)
+
+trait SubPrefix extends SubOne:
+  /** an abstract row into itself with effects added after it: `R` into `R + State % Int` */
+  given prefix[R[_], S[_]](using p: Sub.Prefix[R, S]): Sub[R, S] = p.sub
 
 trait SubOne:
   /** a row of one: its effect's place in `S` */
