@@ -29,8 +29,10 @@ infix type +[R[_], E[_]] = [X] =>> Sum[R, E, X]
 /** the effect `F` with its parameter `S`: `State % Int`, its operations `State[Int, X]` */
 infix type %[F[_, _], S] = [X] =>> F[S, X]
 
-/** `E` is in `R`, somewhere: its place, found by given search; missing, a compile error naming both */
-opaque type In[E[_], R[_]] = Place[E, R, ?]
+/** `E` is in `R`, somewhere: its place, found by given search; missing, a compile error naming both. It is a place:
+ * so a `Has` of an abstract row lifts to the row with effects added after it (`Place.init`), `R + State % Int` under
+ * `R[_]: Has[Yield % Int]` */
+opaque type In[E[_], R[_]] <: Place[E, R, ?] = Place[E, R, ?]
 
 /** `E` is in `R`, and `R` without it is `Rest` */
 opaque type Split[E[_], R[_], Rest[_]] <: In[E, R] = Place[E, R, Rest]
