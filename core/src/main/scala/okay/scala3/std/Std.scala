@@ -1,6 +1,7 @@
 package okay.scala3.std
 
 import okay.scala3.*
+import scala.annotation.unused
 
 /*
  * THE STANDARD EFFECTS: each an enum of its operations, its words, its handler. A word finds its row from the
@@ -64,13 +65,14 @@ object Writer:
         case Tell(w) => cell.set(w :: cell.get)))
 
   /** what `p` wrote, with its value — written outside too, when `p` ends */
-  def listen[W, R[_], Rest[_], A](p: A ! R)(using Split[Writer % W, R, Rest], Sub[Rest, R], In[Writer % W, R])
+  def listen[W, R[_], Rest[_], A](p: A ! R)(
+    using split: Split[Writer % W, R, Rest], sub: Sub[Rest, R], @unused in: In[Writer % W, R])
     : (List[W], A) ! R =
     run[W, R, Rest, A](p).into[R].flatMap((ws, a) => tellAll[W, R](ws).as((ws, a)))
 
   /** what `p` wrote, through `f`, written outside when `p` ends */
   def censor[W, R[_], Rest[_], A](f: List[W] => List[W])(p: A ! R)(
-    using Split[Writer % W, R, Rest], Sub[Rest, R], In[Writer % W, R]): A ! R =
+    using split: Split[Writer % W, R, Rest], sub: Sub[Rest, R], @unused in: In[Writer % W, R]): A ! R =
     run[W, R, Rest, A](p).into[R].flatMap((ws, a) => tellAll[W, R](f(ws)).as(a))
 
   private def tellAll[W, R[_]](ws: List[W])(using In[Writer % W, R]): Unit ! R =

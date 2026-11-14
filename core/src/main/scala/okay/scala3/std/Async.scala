@@ -1,6 +1,7 @@
 package okay.scala3.std
 
 import okay.scala3.*
+import scala.annotation.unused
 
 import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.{ExecutionContext, Future, Promise}
@@ -68,7 +69,7 @@ object Async:
   def never[X, R[_]](using In[Async, R]): X ! R = cancellable[X, R](_ => noCancel)
 
   /** `p` started on its own, the program going on: a fiber, to join or cancel */
-  def fork[A, R[_]](p: A ! Async)(using ec: ExecutionContext, at: In[Async, R]): Fiber[A] ! R =
+  def fork[A, R[_]](p: A ! Async)(using ec: ExecutionContext, @unused at: In[Async, R]): Fiber[A] ! R =
     defer(pure(Fiber(start(p))))
 
   /** `ms` milliseconds later */
